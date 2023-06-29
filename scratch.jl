@@ -4,9 +4,11 @@ using Distributions
 using Statistics
 using LinearAlgebra
 using Zygote
+using Flux
 # import AbstractDifferentiation as AD
 # using Enzyme
 # using ReverseDiff: GradientTape, gradient, gradient!, compile, GradientConfig, DiffResults
+
 
 function simulate_raw()
     N = 10_000
@@ -102,7 +104,7 @@ end
 
 σ(x) = 1.0 ./ (1.0 .+ exp.(-1.0 .* x))
 
-function train_block(q_μ, q_var, q_p, coef::AbstractVector, SE::AbstractVector, R::AbstractMatrix; max_iter = 20, N = 10_000, n_elbo = 20)
+function train_block(q_μ, q_var, coef::AbstractVector, SE::AbstractVector, R::AbstractMatrix; max_iter = 20, N = 10_000, n_elbo = 20)
 
     P = length(coef)
     # 0.08 seconds with zygote, 107k allocations, 20 Mib
@@ -144,11 +146,11 @@ function train_block(q_μ, q_var, q_p, coef::AbstractVector, SE::AbstractVector,
         z = zeros(P)
         @inbounds for j in 1:n_elbo # number of elbo samples
             z = rand(std_normal, P)
-            P_samples = rand.(Bernoulli.(q_p))
+            # P_samples = rand.(Bernoulli.(q_p))
             l, grad = Zygote.withgradient(
                 (a, b, c, d, e) -> elbo(
                     z, # random Z\
-                    P_samples,
+                    # P_samples,
                     a,
                     b,
                     c, 
