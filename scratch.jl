@@ -5,10 +5,78 @@ using Statistics
 using LinearAlgebra
 using Zygote
 using Flux
+using Flux: train!
 # import AbstractDifferentiation as AD
 # using Enzyme
 # using ReverseDiff: GradientTape, gradient, gradient!, compile, GradientConfig, DiffResults
 
+# P is number of SNPs, K is number of annotations
+# output is normalized variance per SNP e.g., s * h2 / P where h2 / P 
+# is the average SNP and s is a small adjustment
+function draw_slab_s_given_annotations(P; K = 100)
+   
+    G = rand(Normal(0, 1.0), P, K) # matrix of annotations - could be made more realistic?
+   
+    # three possibly ways in which the annotations informs per SNP h2
+    functions = (
+        x -> 0.10 .* x, # linear
+        x -> 0.02 .* x .^ 2, # quadratic,
+        x -> x .* 0, # the annotation does nothing!
+    )
+
+    choose_f = Categorical([.3, .05, .65])
+    # pick 1 of the 3 functions
+    choices = [rand(choose_f) for i in 1:K]
+    ϕ = [functions[choices[i]] for i in 1:K] # randomly pick a linear or quadratic transformation
+    
+    σ2 = zeros(P)
+    for i in 1:P
+        # define variance of SNPs as sum of all of the ϕ(G) + one interaction term between 
+        # the first two annotations to throw in some complexity
+        σ2[i] = exp(sum([ϕ[j](G[i, j]) for j in 1:K]) + ϕ[1](G[i, 1]) * ϕ[2](G[i, 2]))
+    end
+
+    s = σ2 ./ mean(σ2) # normalize by average variance
+
+    return s, G, choices
+end
+
+# how many epochs do we need?
+# is momentum the right choice here as optimizer?
+function fit_heritability_nn(s, G; n_epochs = 400)
+
+    K = size(G, 2)
+    P = size(G, 1)
+    H = 3
+    # super simple neural network with one hidden layer with 5 nodes
+    model = Chain(
+        Dense(K => H, relu; init = Flux.glorot_normal(gain = 0.0005)),
+        Dense(H => 1)
+    )
+
+    # RMSE
+    function loss(model, x, y)
+        yhat = vec(model(transpose(x))) # need vec to convert 1 x P matrix to length P vec
+        Flux.mse(yhat, y)
+    end
+
+    opt = Flux.setup(Momentum(), model)
+    data = [
+            (
+            Float32.(G), # to address Float64 -> Float32 Flux complaint
+            log1p.(s), # later apply inverse of exp.(x) .- 1.0
+        )
+        ] 
+
+    for epoch in 1:n_epochs
+        train!(loss, model, data, opt)
+
+        println("epoch = $epoch")
+        println(loss(model, G, s))
+    end
+    
+    return model
+end
 
 function simulate_raw()
     N = 10_000
@@ -26,10 +94,14 @@ function simulate_raw()
     L = p_causal * P # 100
     γ = rand(Bernoulli(p_causal), P)
     h2 = 0.10
-    s = rand(Normal(1, 0.1), P)
+
+    # Simulation annotations and create expected s parameter for causal SNPs
+    s, G, _ = draw_slab_s_given_annotations(sum(γ))
+
     spike = rand(Normal(0, 0.001), P)
-    slab  = rand(Normal(0,  sqrt(h2 / L)), P) .* sqrt.(s)
+    slab  = rand(Normal(0,  sqrt(h2 / L)), P)
     β = γ .* slab + (1 .- γ) .* spike
+    β[γ] .= β[γ] .* sqrt.(s)
     println(β)
     μ = X * β
     vXβ = var(μ)
@@ -40,7 +112,7 @@ function simulate_raw()
     σ2 = vXβ * (1 - h2) / h2
 
     Y = μ + rand(Normal(0, sqrt(σ2)), N)
-    return X, β, Y, Σ
+    return X, β, Y, Σ, s, G
 end
 
 function estimate_sufficient_statistics(X, Y)
@@ -53,13 +125,13 @@ function estimate_sufficient_statistics(X, Y)
     SE = sqrt.(SE2)
     Z = coef ./ SE
     R = cor(X)
-    return coef, SE, Z, cor(X)
+    return coef, SE, Z, cor(X), D
 end
 
 function log_prior(β)
 
     P = length(β)
-    prob_slab = 0.01
+    prob_slab = 0.10
     L = prob_slab * 1_000
     h2 = 0.10
     spike_σ2 = 1e-6
@@ -87,19 +159,41 @@ end
 joint_log_prob(β, coef, SE, R) = rss(β, coef, SE, R) + log_prior(β)
 
 """
-    elbo(z, q, coef, SE, R)
+    elbo(z, q_μ, log_q_var, coef, SE, R)
 
-TBW
+```julia-repl
+elbo(
+    rand(Normal(0, 1), 3),
+    [0.01, -0.003, 0.0018],
+    [-9.234, -9.24, -9.24],
+    [0.023, -0.0009, -.0018],
+    [.0094, .00988, .0102],
+    [1.0 .03 .017; .031 1.0 -0.03; .017 -0.02 1.0]
+)
+```
 """
 function elbo(z, q_μ, log_q_var, coef, SE, R)
     q_var = exp.(log_q_var)
     q = MvNormal(q_μ, Diagonal(I * q_var))
     q_sd = sqrt.(q_var)
     ϕ = q_μ .+ q_sd .* z
+    # γ = compute_γ(q_μ, q_var)   
+    # jl =  joint_log_prob(γ .* ϕ, coef, SE, R) 
     jl =  joint_log_prob(ϕ, coef, SE, R) 
     q = logpdf(q, ϕ)
     # jac = prod(z)
     return (jl - q)
+end
+
+function compute_γ(q_μ, q_var; slab_σ = sqrt(0.10 / 10 + 1e-6), p_causal = 0.10)
+
+    q_sd = sqrt.(q_var)
+    
+    SSR = (q_μ .^ 2) ./ q_var
+    odds = (p_causal / (1 - p_causal)) .* (q_sd ./ slab_σ) .* exp.(SSR ./ 2)
+    γ = odds ./ (odds .+ 1)
+    
+    return γ
 end
 
 σ(x) = 1.0 ./ (1.0 .+ exp.(-1.0 .* x))
@@ -194,11 +288,68 @@ function train_block(q_μ, q_var, coef::AbstractVector, SE::AbstractVector, R::A
     return loss
 end
 
+
+"""
+```julia-repl
+train_cavi(
+    ss[1],
+    ss[2],
+    ss[4],
+    ss[5]
+)
+```
+"""
+function train_cavi(coef, SE, R, D; n_elbo = 50, max_iter = 20, N = 10_000, σ2_β = .01, σ2 = 1.0, p_causal = 0.01)
+   
+    # TODO: eventually, replace fixed slab variance and inclusion probabilty with 
+    # annotation informed prior
+
+    P = length(coef)
+
+    q_μ = zeros(P)
+    q_var = ones(P) * 0.001
+    q_sd = sqrt.(q_var)
+    q_α = ones(P) .* 0.10
+    q_odds = ones(P) 
+    SSR = ones(P)
+
+    X_sd = sqrt.(D ./ N)
+    Xty = coef .* D
+    XtX = @turbo Diagonal(X_sd) * R * Diagonal(X_sd) .* N
+
+    @inbounds for i in 1:max_iter
+
+        # if clause just to monitor loss convergence
+        if (mod(i, 5) == 0) | (i == 1)
+            loss = 0.0
+            @inbounds for z in 1:n_elbo
+                loss = loss + elbo(rand(Normal(0, 1), P), q_μ, log.(q_var), coef, SE, R)
+            end
+         
+            loss = loss / n_elbo
+            println("i = $i, loss = $loss (bigger numbers are better)")   
+        end
+
+        @turbo q_var .= σ2 ./ (diag(XtX) .+ 1 / σ2_β)
+        @inbounds for k in 1:P
+            J = setdiff(1:P, k)
+            q_μ[k] = (view(q_var, k) ./ σ2) .* (view(Xty, k) .- sum(view(XtX, k, J) .* view(q_α, J) .* view(q_μ, J)))
+        end
+        @turbo SSR .= q_μ .^ 2 ./ q_var
+        @turbo q_odds .= (p_causal / (1 - p_causal)) .* q_sd ./ sqrt(σ2_β) .* exp.(SSR ./ 2.0)
+        @turbo q_α .= q_odds ./ (1.0 .+ q_odds)
+
+
+    end
+
+    return q_μ, q_α, q_var
+end
+
 function train(coef::Vector{Float64}, SE::Vector{Float64}, R::AbstractMatrix)
     P = length(coef)
 
     # β = rand(Normal(0, .001), P)
-    q_μ = rand(Normal(0, .0001), P) # init q
+    q_μ = rand(Normal(0, .1), P) # init q
     q_var = log.(ones(P) * 0.0001) # on log scale
 
     N_BLOCKS = 20
@@ -217,11 +368,13 @@ function train(coef::Vector{Float64}, SE::Vector{Float64}, R::AbstractMatrix)
             view(SE, s:e), 
             view(R, s:e, s:e); 
             max_iter = 100,
-            n_elbo = 10
+            n_elbo = 20
         )
         # loss_vector[i] = -1.0 joint_log_prob(q_μ, coef, SE, R)
         loss_vector[i] = last(loss)
     end
 
-    return q_μ, q_var, loss_vector
+    γ = compute_γ(q_μ, exp.(q_var))
+
+    return q_μ, γ, exp.(q_var), loss_vector
 end
