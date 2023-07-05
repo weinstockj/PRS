@@ -7,6 +7,8 @@ Steps to load this module from the root directory:
 
 Now the functions have been sourced. 
 
+## Simulating GWAS data
+
 Then first simulate GWAS summary statistic data:
 
 1. `raw = simulate_raw()`
@@ -14,6 +16,8 @@ Then first simulate GWAS summary statistic data:
 
 Check out the true $\beta$ distribution with:
 `using Plots; histogram(raw[2])` 
+
+## Train PRS
 
 Now train the PRS with ADVI:
  `@time out = train(ss[1], ss[2], ss[4])`
@@ -34,3 +38,7 @@ We can compare the CAVI and ADVI output with
 
 `scatter(cavi_out[1], out[1])` and
 `scatter(cavi_out[1] .* cavi_out[2], out[1] .* out[2])`
+
+## Unit testing
+
+Run unit tests with `include("test/runtests.jl")`
