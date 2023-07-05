@@ -141,21 +141,42 @@ function log_prior(β)
     return sum(logprobs)
 end
 
+"""
+    elbo(z, q_μ, log_q_var, coef, SE, R)
+
+```julia-repl
+rss(
+    [0.0011, .0052, 0.0013],
+    [-0.019, 0.013, -.0199],
+    [.0098, .0098, .0102],
+    [1.0 .03 .017; .031 1.0 -0.03; .017 -0.02 1.0]
+)
+```
+"""
 function rss(β, coef, SE, R)
     # .000349, 23 allocations no turbo with P = 100
 
     # .01307 with P = 500
-    S = Matrix(Diagonal(SE))
-    Sinv = Matrix(Diagonal(1 ./ SE)) # need to wrap in Matrix for ReverseDiff
-    μ = S * R * Sinv * β
-    Σ = Hermitian(S * R * S)
+    # S = Matrix(Diagonal(SE))
+   # Sinv = @turbo Matrix(Diagonal(1 ./ SE)) # need to wrap in Matrix for ReverseDiff
+    μ =  @turbo (SE .* R .* (1 ./ SE)') * β
+    Σ = @turbo Hermitian(SE .* R .* SE')
     #println(Σ)
-    dist = MvNormal(μ, Σ)
-    return logpdf(dist, coef)
+    # dist = MvNormal(μ, Σ)
+    return logpdf(MvNormal(μ, Σ), coef)
     #return μ, Σ
 end
 
-
+"""
+```julia-repl
+joint_log_prob(
+    [0.0011, .0052, 0.0013],
+    [-0.019, 0.013, -.0199],
+    [.0098, .0098, .0102],
+    [1.0 .03 .017; .031 1.0 -0.03; .017 -0.02 1.0]
+)
+```
+"""
 joint_log_prob(β, coef, SE, R) = rss(β, coef, SE, R) + log_prior(β)
 
 """
