@@ -93,10 +93,10 @@ function fit_heritability_nn(s, p, G, iter; n_epochs = 300, patience=30, mse_imp
         weighted_loss_slab = weight_slab * loss_slab
         loss_causal = Flux.mse(yhat[2, :], y_causal)
         weighted_loss_causal = weight_causal * loss_causal
-        println("slab var loss = $loss_slab")
-        println("slab var loss weighted = $weighted_loss_slab")
-        println("percent causal loss = $loss_causal")
-        println("percent causal loss weighted = $weighted_loss_causal")
+        # println("slab var loss = $loss_slab")
+        # println("slab var loss weighted = $weighted_loss_slab")
+        # println("percent causal loss = $loss_causal")
+        # println("percent causal loss weighted = $weighted_loss_causal")
         # return loss_slab + loss_causal ## ak: losses summed to form the total loss for training
         return weighted_loss_slab + weighted_loss_causal ## ak: losses summed to form the total loss for training
 
@@ -104,7 +104,7 @@ function fit_heritability_nn(s, p, G, iter; n_epochs = 300, patience=30, mse_imp
 
     # logit(x) = log((x .+ 1e-10) ./ (1.0 .- x .+ 1e-10)) # adding small constant to prevent from being 0
     logit(x) = log((x) ./ (1.0 .- x)) # adding small constant to prevent from being 0
-    G_standardized = standardize(G)
+    # G_standardized = standardize(G)
 
     # println("uh oh")
     # println(log.(s))
@@ -112,21 +112,22 @@ function fit_heritability_nn(s, p, G, iter; n_epochs = 300, patience=30, mse_imp
     # Momentum()
     # RAdam()
     # AdaDelta()
-    opt = Flux.setup(AdaGrad(0.01), model) ## ak: using adaptive gradient; yay for adapting the learning rate on its own!
+    # opt = Flux.setup(AdaGrad(0.01), model) ## ak: using adaptive gradient; yay for adapting the learning rate on its own!
+    opt = Flux.setup(Momentum(), model)
     data = [
             (
-            Float32.(G_standardized), # to address Float64 -> Float32 Flux complaint
+            Float32.(G), # to address Float64 -> Float32 Flux complaint
             log.(s), # later apply inverse of exp.(x) .- 1.0
             # log.(s), # ak: log won't work for negative expected betas
             logit.(p)
         )
         ]
-    println("min, max s")
-    println(minimum(s))
-    println(maximum(s))
-    println("min, max p")
-    println(minimum(p))
-    println(maximum(p))
+    # println("min, max s")
+    # println(minimum(s))
+    # println(maximum(s))
+    # println("min, max p")
+    # println(minimum(p))
+    # println(maximum(p))
     
     best_loss = Inf
     count_since_best = 0
@@ -134,19 +135,19 @@ function fit_heritability_nn(s, p, G, iter; n_epochs = 300, patience=30, mse_imp
     epoch_losses = []
 
     for epoch in 1:n_epochs
-        println("training!")
+        # println("training!")
         ## Train, update model's weights based on loss f, data, and optimizer
         ## Use backpropogation to compute the gradients of the model's parameters wrt the loss, and then the
         ## optimizer updates the params to minimize this loss
         ## Data passed to train! is used to train the model
         train!(loss, model, data, opt)
-        println("epoch = $epoch")
+        # println("epoch = $epoch")
         ## Compute current loss of the model on the entire dataset represented by G, s, p, without updating the model's weights
         ## We want to use this to monitor the models performance on the training set after each epoch
         # current_loss = loss(model, G_standardized, log1p.(s), logit.(p))
-        current_loss = loss(model, G_standardized, log.(s), logit.(p))
+        current_loss = loss(model, G, log.(s), logit.(p))
         push!(epoch_losses, current_loss)
-        println("current loss weighted = $current_loss")
+        # println("current loss weighted = $current_loss")
 
         # Check for improvement in loss
         mse_improvement = best_loss - current_loss
@@ -169,7 +170,7 @@ function fit_heritability_nn(s, p, G, iter; n_epochs = 300, patience=30, mse_imp
 
     # Plotting the loss
     plot_nn_loss = plot_loss_vs_epochs(epoch_losses, iter)
-    savefig("~/Downloads/scprs_figs/epoch_losses_$iter.png")
+    # savefig("~/Downloads/scprs_figs/epoch_losses_$iter.png")
     display(plot_nn_loss)
     
     return model
@@ -323,22 +324,21 @@ end
 
 σ(x) = 1.0 ./ (1.0 .+ exp.(-1.0 .* x))
 
-function train_cavi(q_μ, q_α, q_var, p_causal, σ2_β, X_sd, i_iter, coef, SE, R, D; n_elbo = 50, max_iter = 4, N = 10_000, σ2 = 1.0)
+function train_cavi(p_causal, σ2_β, X_sd, i_iter, coef, SE, R, D; n_elbo = 50, max_iter = 10, N = 10_000, σ2 = 1.0)
    
     # TODO: eventually, replace fixed slab variance and inclusion probabilty with 
     # annotation informed prior
-
     P = length(coef)
 
-    # q_μ = zeros(P)
-    # q_var = ones(P) * 0.001
+    q_μ = zeros(P)
+    q_var = ones(P) * 0.001
     q_sd = sqrt.(q_var)
-    # q_α = ones(P) .* 0.10
+    q_α = ones(P) .* 0.10
     q_odds = ones(P) 
     SSR = ones(P)
 
     # X_sd = sqrt.(D ./ N)
-    Xty = coef .* D
+    Xty = copy(coef .* D)
     XtX = Diagonal(X_sd) * R * Diagonal(X_sd) .* N
 
     loss = 0.0
@@ -403,12 +403,13 @@ function plot_corr_true_estimated(true_estimated_corr)
 end
 
 # coef, SE, Z, cor(X), D
-function train_until_convergence(coef, SE, R, D, s, G, true_betas; max_iter = 3, threshold = 0.1, N = 10_000) # max_iter = 30, 
+function train_until_convergence(coef, SE, R, D, s, G, true_betas; max_iter = 10, threshold = 0.01, N = 10_000) # max_iter = 30, 
 
     ## initialize
     P = length(coef)
     q_μ = zeros(P)
     q_α = ones(P) .* 0.10
+    L = sum(q_α)
     q_var = ones(P) * 0.001
 
     cavi_q_μ = copy(q_μ) # zeros(P)
@@ -425,15 +426,27 @@ function train_until_convergence(coef, SE, R, D, s, G, true_betas; max_iter = 3,
 
     prev_loss = -Inf
 
-    posterior_effect_sizes = []
+    posterior_effect_sizes = Float32[]
     combined_cavi_losses = []
-    corr_true_estimated = []
+    corr_true_estimated = Float32[]
 
     for i in 1:max_iter
         println("Iteration $i")
         # train CAVI using set slab variance and p_causal as inputs; first round
         # cavi_q_u is cavi trained estimated betas, and coef is from iteration before
-        q_μ, q_α, q_var, odds, new_loss, cavi_losses = train_cavi(cavi_q_μ, cavi_q_α, cavi_q_var, nn_p_causal, nn_σ2_β, X_sd, i, coef, SE, R, D)
+        # q_μ, q_α, q_var, odds, new_loss, cavi_losses = train_cavi(cavi_q_μ, cavi_q_α, cavi_q_var, nn_p_causal, nn_σ2_β, X_sd, i, coef, SE, R, D)
+        q_μ, q_α, q_var, odds, new_loss, cavi_losses = train_cavi(
+            nn_p_causal, 
+            nn_σ2_β, 
+            X_sd, 
+            i, 
+            coef, 
+            SE, 
+            R, 
+            D
+        )
+
+
 
         println("difference from n, n-1 (%)")
         println(abs(new_loss - prev_loss) / abs(prev_loss))
@@ -446,15 +459,15 @@ function train_until_convergence(coef, SE, R, D, s, G, true_betas; max_iter = 3,
 
         prev_loss = copy(new_loss)
 
-        coef = cavi_q_μ .* cavi_q_α
-        SE = sqrt.(cavi_q_var) 
         ## ak: Set α(i) =α and μ(i) =μ
         cavi_q_μ = copy(q_μ)
         cavi_q_α = copy(q_α)
         cavi_q_var = copy(q_var)
 
         max_abs_post_effect = abs(maximum(q_μ .* q_α))
-        corr_with_true = cor(cavi_q_μ .* q_α, true_betas)
+        corr_with_true = cor(q_μ .* q_α, true_betas)
+        println("corr_with_true")
+        println(corr_with_true)
 
         # compute new marginal variance from q_α and q_var
         marg_var =  q_α .* q_var
@@ -462,26 +475,39 @@ function train_until_convergence(coef, SE, R, D, s, G, true_betas; max_iter = 3,
             error("q_var or marginal_var has neg value")
         end
 
+        println("q_μ")
+        println(q_μ[1:3])
+
         println("MARGINAL VARIANCE")
-        println(marg_var)
+        println(marg_var[1:3])
+
+        println("conditional VARIANCE")
+        println(q_var[1:3])
         # marg_var = marg_var ./ mean(marg_var)
 
         println("Q_ALPHA")
-        println(q_α)
+        println(q_α[1:3])
         # train the neural network using G and the new s and p_causal
-        model = fit_heritability_nn(marg_var, q_α, G, i) #*#
+        model = fit_heritability_nn(q_var, q_α, G, i) #*#
 
         # use the model to compute new σ2_β and p_causal
         outputs = model(transpose(G))
         println("VARIANCE B AFTER NN")
-        println(outputs[1, :])
         # nn_σ2_β = expm1.(outputs[1, :]) ## ak: apply inverse of log1p to first output; cleaner way to write exp(x)-1
         nn_σ2_β = exp.(outputs[1, :]) 
+        println("sum(nn_σ2_β)")
+        println(sum(nn_σ2_β))
+        nn_σ2_β = nn_σ2_β .* 1.0 ./ sum(nn_σ2_β)
+        println(nn_σ2_β[1:3])
         nn_p_causal = 1 ./ (1 .+ exp.(-outputs[2, :])) ## ak: logistic to recover orig prob
         println("new variance after training")
-        println(nn_σ2_β)
-        println("q odds after training")
-        println(nn_p_causal)
+        println(nn_σ2_β[1:3])
+
+        println("mean nn_p_causal")
+        println(mean(nn_p_causal))
+        nn_p_causal = nn_p_causal .* L ./ sum(nn_p_causal)
+        println("new p_causal after training")
+        println(nn_p_causal[1:3])
 
         push!(posterior_effect_sizes, max_abs_post_effect)
         push!(corr_true_estimated, corr_with_true)
@@ -489,11 +515,13 @@ function train_until_convergence(coef, SE, R, D, s, G, true_betas; max_iter = 3,
 
     end
     
-    plot_max_effect = plot_max_effect_size_vs_iteration(posterior_effect_sizes)
-    savefig("~/Downloads/scprs_figs/plot_max_effect.png")
-    display(plot_max_effect)
+    # plot_max_effect = plot_max_effect_size_vs_iteration(posterior_effect_sizes)
+    # savefig("~/Downloads/scprs_figs/plot_max_effect.png")
+    # display(plot_max_effect)
+    println("corr with true effects")
+    println(corr_true_estimated)
     plot_corr = plot_corr_true_estimated(corr_true_estimated)
-    savefig("~/Downloads/scprs_figs/plot_corr.png")
+    # savefig("~/Downloads/scprs_figs/plot_corr.png")
     display(plot_corr)
     println(posterior_effect_sizes)
     println("cavi losses")
