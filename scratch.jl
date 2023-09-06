@@ -8,6 +8,8 @@ using Flux
 using Flux: train!
 using Plots
 using Random
+using StatsBase: sample
+using HypothesisTests: ApproximateTwoSampleKSTest
 # import AbstractDifferentiation as AD
 # using Enzyme
 # using ReverseDiff: GradientTape, gradient, gradient!, compile, GradientConfig, DiffResults
@@ -36,53 +38,34 @@ function draw_slab_s_given_annotations(P; K = 100)
     choices = [rand(choose_f) for i in 1:K]
     ϕ = [functions[choices[i]] for i in 1:K] # randomly pick a linear or quadratic transformation
     
-    σ2 = zeros(P)
+    σ2 = zeros(P) # P = 1000, K = 100
     for i in 1:P
         # define variance of SNPs as sum of all of the ϕ(G) + one interaction term between 
         # the first two annotations to throw in some complexity
         σ2[i] = exp(sum([ϕ[j](G[i, j]) for j in 1:K]) + ϕ[1](G[i, 1]) * ϕ[2](G[i, 2]))
+        # exp(sum([raw[9][j](raw[6][1, j]) for j in 1:100]) + raw[9][1](raw[6][1, 1]) * raw[9][2](raw[6][1, 2]))
     end
 
     s = σ2 ./ mean(σ2) # normalize by average variance
 
-    return s, G, choices
+    return s, G, choices, ϕ, σ2
 end
 
 function standardize(matrix)
     return (matrix .- mean(matrix, dims=1)) ./ std(matrix, dims=1)
 end
 
-function plot_loss_vs_epochs(losses, i)
-    plot(1:length(losses), losses, xlabel="Epochs", ylabel="Loss", legend=false, title="Loss vs. Epochs, iteration $i", reuse=false)
+function plot_loss_vs_epochs(losses, test_losses, i, epoch_model_taken)
+    plot(1:length(losses), losses, xlabel="Epochs", ylabel="Loss", label="train", title="Loss vs. Epochs, iteration $i, best at $epoch_model_taken", reuse=false)
+    plot!(1:length(test_losses), test_losses, lc=:orange, label="test")
+    vline!([epoch_model_taken], label="epoch of best")
 end
 
 # how many epochs do we need?
 # is momentum the right choice here as optimizer?
 ## ak: modified to have two outputs, and defined two losses: loss_slab, loss_causal
-function fit_heritability_nn(s, p, G, iter; n_epochs = 300, patience=30, mse_improvement_threshold=0.05)
+function fit_heritability_nn(model, q_μ, q_var, q_α, G, i; n_epochs = 200, patience=100, mse_improvement_threshold=0.1, test_ratio=0.2, num_splits=10, weight_slab=1, weight_causal=1)
 
-    # function split_activation(x)
-    #     # Apply softplus to the first output
-    #     y1 = softplus(x[1, :])
-    #     # Keep the second output unchanged
-    #     y2 = x[2, :]
-    #     return vcat(y1', y2')
-    # end
-
-    K = size(G, 2)
-    P = size(G, 1)
-    H = 10
-    # super simple neural network with one hidden layer with 5 nodes
-    model = Chain(
-        Dense(K => H, relu; init = Flux.glorot_normal(gain = 0.0005)),
-        # Dense(K => H; init = Flux.glorot_normal(gain = 0.0005)),
-        # BatchNorm(H),
-        # relu,
-        Dense(H => 2)
-    )
-
-    weight_slab = 0.1 #0.001
-    weight_causal = 1
 
     # RMSE
     function loss(model, x, y_slab, y_causal) ## ak: need two losses for slab variance and percent causal 
@@ -93,86 +76,118 @@ function fit_heritability_nn(s, p, G, iter; n_epochs = 300, patience=30, mse_imp
         weighted_loss_slab = weight_slab * loss_slab
         loss_causal = Flux.mse(yhat[2, :], y_causal)
         weighted_loss_causal = weight_causal * loss_causal
-        println("slab var loss = $loss_slab")
-        println("slab var loss weighted = $weighted_loss_slab")
-        println("percent causal loss = $loss_causal")
-        println("percent causal loss weighted = $weighted_loss_causal")
+        # println("slab var loss = $loss_slab")
+        # println("slab var loss weighted = $weighted_loss_slab")
+        # println("percent causal loss = $loss_causal")
+        # println("percent causal loss weighted = $weighted_loss_causal")
         # return loss_slab + loss_causal ## ak: losses summed to form the total loss for training
         return weighted_loss_slab + weighted_loss_causal ## ak: losses summed to form the total loss for training
-
     end
 
-    # logit(x) = log((x .+ 1e-10) ./ (1.0 .- x .+ 1e-10)) # adding small constant to prevent from being 0
-    logit(x) = log((x) ./ (1.0 .- x)) # adding small constant to prevent from being 0
-    G_standardized = standardize(G)
+    logit(x) = log((x) ./ (1.0 .- x)) 
+    # G_standardized = standardize(G)
 
-    # println("uh oh")
-    # println(log.(s))
+    best_ks_statistic = Inf
+    best_train_data = ()
+    best_test_data = ()
+
+    P = length(q_var)
+
+    for _ in 1:num_splits
+        # ak: shuffle indices
+        permuted_indices = randperm(P)  
+        # ak: get number of validation samples
+        num_test = floor(Int, test_ratio * P)
+        # ak: split into train and test based on above indices
+        train_indices = permuted_indices[1:end-num_test]
+        test_indices = permuted_indices[end-num_test+1:end]
+
+        # ak: get matching posterior means in training and testing
+        train_posterior_means = q_μ[train_indices]
+        test_posterior_means = q_μ[test_indices]
+
+        # ak: compute the KS statistic and pick the split with smallest KS stats
+        ks_test = ApproximateTwoSampleKSTest(train_posterior_means, test_posterior_means)
+        ks_n = ks_test.n_x*ks_test.n_y/(ks_test.n_x+ks_test.n_y)
+        ks_statistic = (sqrt(ks_n)*ks_test.δ)
+
+        if ks_statistic < best_ks_statistic
+            best_ks_statistic = ks_statistic
+            best_train_data = (G[train_indices, :], q_var[train_indices], q_α[train_indices])
+            best_test_data = (G[test_indices, :], q_var[test_indices], q_α[test_indices])
+        end
+    end
 
     # Momentum()
     # RAdam()
     # AdaDelta()
-    opt = Flux.setup(AdaGrad(0.01), model) ## ak: using adaptive gradient; yay for adapting the learning rate on its own!
+    # AdaGrad(0.01)
+    opt = Flux.setup(Momentum(), model)
     data = [
             (
-            Float32.(G_standardized), # to address Float64 -> Float32 Flux complaint
-            log.(s), # later apply inverse of exp.(x) .- 1.0
-            # log.(s), # ak: log won't work for negative expected betas
-            logit.(p)
+            Float32.(best_train_data[1]), # to address Float64 -> Float32 Flux complaint
+            log.(best_train_data[2]), # later apply inverse of exp.(x) .- 1.0
+            logit.(best_train_data[3]) # later apply logistic to recover orig prob
         )
         ]
-    println("min, max s")
-    println(minimum(s))
-    println(maximum(s))
-    println("min, max p")
-    println(minimum(p))
-    println(maximum(p))
     
     best_loss = Inf
+    best_model = deepcopy(model)
     count_since_best = 0
-    count_below_threshold = 0
-    epoch_losses = []
+    best_model_epoch = Inf
+    train_losses = []
+    test_losses = []
 
     for epoch in 1:n_epochs
-        println("training!")
+        # println("training!")
         ## Train, update model's weights based on loss f, data, and optimizer
         ## Use backpropogation to compute the gradients of the model's parameters wrt the loss, and then the
         ## optimizer updates the params to minimize this loss
         ## Data passed to train! is used to train the model
         train!(loss, model, data, opt)
-        println("epoch = $epoch")
+        # println("epoch = $epoch")
         ## Compute current loss of the model on the entire dataset represented by G, s, p, without updating the model's weights
         ## We want to use this to monitor the models performance on the training set after each epoch
-        # current_loss = loss(model, G_standardized, log1p.(s), logit.(p))
-        current_loss = loss(model, G_standardized, log.(s), logit.(p))
-        push!(epoch_losses, current_loss)
-        println("current loss weighted = $current_loss")
+        train_loss = loss(model, best_train_data[1], log.(best_train_data[2]), logit.(best_train_data[3]))
+        push!(train_losses, train_loss)
+        # println("current loss weighted = $train_loss")
 
-        # Check for improvement in loss
-        mse_improvement = best_loss - current_loss
+        # ak: validation loss
+        test_loss = loss(model, best_test_data[1], log.(best_test_data[2]), logit.(best_test_data[3]))
+        println("Test loss = $test_loss")
+        
+        push!(test_losses, test_loss)
+
+        # check for improvement in loss
+        mse_improvement = best_loss - test_loss
+        # if improvement from prev iteration is greater than threshold
         if mse_improvement > mse_improvement_threshold
-            best_loss = current_loss
+            best_loss = test_loss
             count_since_best = 0
-            count_below_threshold = 0
+            # set current epoch as to when best model was observed
+            best_model_epoch = epoch
+            # and save current model as best model
+            best_model = deepcopy(model)
+            println("NEW BEST MODEL at $best_model_epoch")
         else
             count_since_best += 1
-            count_below_threshold += 1
         end
 
-        # If no improvement for "patience" epochs or consistent small improvement, stop training
-        if count_since_best >= patience || count_below_threshold >= 20
+        # If no improvement for "patience" epochs, stop training
+        if count_since_best >= patience
             println("Early stopping after $epoch epochs.")
             break
         end
 
     end
 
+    println("Best model taken from epoch $best_model_epoch.")
+
     # Plotting the loss
-    plot_nn_loss = plot_loss_vs_epochs(epoch_losses, iter)
-    savefig("~/Downloads/scprs_figs/epoch_losses_$iter.png")
-    display(plot_nn_loss)
+    plot_nn_loss = plot_loss_vs_epochs(train_losses, test_losses, i, best_model_epoch)
+    savefig("~/Downloads/scprs_figs/epoch_losses_$i.png")
     
-    return model
+    return best_model
 end
 
 function simulate_raw()
@@ -197,7 +212,8 @@ function simulate_raw()
 
     # Simulation annotations and create expected s parameter for causal SNPs
     # s, G, _ = draw_slab_s_given_annotations(sum(γ))
-    s, G, _ = draw_slab_s_given_annotations(P)
+    # s, G, _ = draw_slab_s_given_annotations(P)
+    s, G, function_choices, phi, sigma_squared = draw_slab_s_given_annotations(P)
 
     spike = rand(Normal(0, 0.001), P)
     slab  = rand(Normal(0,  sqrt(h2 / L)), P)
@@ -214,7 +230,7 @@ function simulate_raw()
     σ2 = vXβ * (1 - h2) / h2
 
     Y = μ + rand(Normal(0, sqrt(σ2)), N)
-    return X, β, Y, Σ, s, G, γ
+    return X, β, Y, Σ, s, G, γ, function_choices, phi, sigma_squared
 end
 
 function estimate_sufficient_statistics(X, Y)
@@ -323,25 +339,26 @@ end
 
 σ(x) = 1.0 ./ (1.0 .+ exp.(-1.0 .* x))
 
-function train_cavi(q_μ, q_α, q_var, p_causal, σ2_β, X_sd, i_iter, coef, SE, R, D; n_elbo = 50, max_iter = 4, N = 10_000, σ2 = 1.0)
+function train_cavi(p_causal, σ2_β, X_sd, i_iter, coef, SE, R, D; n_elbo = 50, max_iter = 10, N = 10_000, σ2 = 1.0)
    
     # TODO: eventually, replace fixed slab variance and inclusion probabilty with 
     # annotation informed prior
-
     P = length(coef)
 
-    # q_μ = zeros(P)
-    # q_var = ones(P) * 0.001
+    q_μ = zeros(P)
+    q_var = ones(P) * 0.001
     q_sd = sqrt.(q_var)
-    # q_α = ones(P) .* 0.10
+    q_α = ones(P) .* 0.10
     q_odds = ones(P) 
     SSR = ones(P)
 
     # X_sd = sqrt.(D ./ N)
-    Xty = coef .* D
+    Xty = copy(coef .* D)
     XtX = Diagonal(X_sd) * R * Diagonal(X_sd) .* N
 
-    loss = 0.0
+    loss = -Inf
+    prev_loss = -Inf
+    prev_prev_loss = -Inf
     cavi_loss = []
 
     @inbounds for i in 1:max_iter
@@ -356,23 +373,37 @@ function train_cavi(q_μ, q_α, q_var, p_causal, σ2_β, X_sd, i_iter, coef, SE,
             loss = loss / n_elbo
 
             if isnan(loss) == true
-                println("q_μ")
-                println(q_μ)
-                println("q_var")
-                println(q_var)
-                println("q_odds")
-                println(q_odds)
-                println("q_α")
-                println(q_α)
+                println("NaN loss detected.")
+                break
+            end
+
+            println("i = $i, loss = $loss (bigger numbers are better)")   
+
+            # ak: stopping criterion for oscillation
+            if (prev_loss > prev_prev_loss && loss < prev_loss) || 
+                (prev_loss < prev_prev_loss && loss > prev_loss)
+                # ak: we want to keep q_μ, q_α, q_var, q_odds from i-1 iteration
+                println("Oscillation detected. Stopping at iteration $i.")
+                break
+            end
+
+            # ak: stopping criterion for insufficient improvement (10%)
+            # ak: added a small constant to avoid division by zero
+            relative_improvement = abs(loss - prev_loss) / (abs(prev_loss) + 1e-8)  
+            if relative_improvement < 0.10
+            # ak: we want to keep q_μ, q_α, q_var, q_odds from i-1 iteration
+                println("Insufficient improvement. Stopping at iteration $i.")
                 break
             end
 
             push!(cavi_loss, loss)
 
-            println("i = $i, loss = $loss (bigger numbers are better)")   
+            # ak: update the previous losses for the next iteration
+            prev_prev_loss = prev_loss
+            prev_loss = loss
         end
 
-        # σ2_β and p_causal are vectors
+        println("q_μ, q_α, q_var, q_odds updates happening")
 
         q_var .= σ2 ./ (diag(XtX) .+ 1 ./ σ2_β) ## ak: eq 8; \s^2_k; does not depend on alpha and mu from previous
         @inbounds for k in 1:P
@@ -383,8 +414,12 @@ function train_cavi(q_μ, q_α, q_var, p_causal, σ2_β, X_sd, i_iter, coef, SE,
         q_odds .= (p_causal ./ (1 .- p_causal)) .* q_sd ./ sqrt.(σ2_β) .* exp.(SSR ./ 2.0) ## ak: eq 10; update a_k 
         q_α .= q_odds ./ (1.0 .+ q_odds)
 
+        println("q_μ")
+        println(q_μ[1:3])
 
     end
+
+    println("CAVI updates finished!")
 
     # with probability q_alpha, additive effect beta is normal with mean q_mu and variance q_var
     return q_μ, q_α, q_var, q_odds, loss, cavi_loss
@@ -394,21 +429,49 @@ function plot_max_effect_size_vs_iteration(effect_sizes)
     plot(1:length(effect_sizes), effect_sizes, xlabel="Iteration", ylabel="Maximum absolute effect size", legend=false, title="Max abs effect size at each iteration", reuse=false)
 end
 
-function plot_cavi_losses(cavi_loss)
-    plot(1:length(cavi_loss), cavi_loss, xlabel="Iteration", ylabel="Maximum absolute effect size", legend=false, title="Max abs effect size at each iteration", reuse=false)
+function plot_cavi_losses(cavi_loss, i)
+    plot(1:length(cavi_loss), cavi_loss, xlabel="iteration (inner loop)", ylabel="loss", legend=false, title="Iteration $i, CAVI loss", reuse=false)
 end
 
 function plot_corr_true_estimated(true_estimated_corr)
     plot(1:length(true_estimated_corr), true_estimated_corr, xlabel="Iteration", ylabel="Correlation (r)", legend=false, title="Correlation of true and est betas at each iteration", reuse=false)
 end
 
+function visualize_weights(model, i) #, annotation_names)
+    # extract weights from the first layer
+    layer1_weights = model.layers[1].weight
+    # extract weights from the second layer
+    layer2_weights = model.layers[2].weight
+    # visualize the weights
+    plot(heatmap(layer1_weights, c=cgrad([:blue, :white, :red])), heatmap(layer2_weights), size=(1000,800), 
+    title="Weights for Neurons at iter $i") #, [-Inf, 0, Inf]
+end
+
+function find_max_activation(layer, K)
+    # create a set of one-hot encoded input patterns; 100 vectors
+    # only one feature is active at a time
+    dummy_inputs = [Float32.(I == j ? 1 : 0 for I in 1:K) for j in 1:K]
+
+    # extract activation values of the neuron for each input pattern
+    activations = [layer(input) for input in dummy_inputs]
+    println("ACTIVATIONS")
+    println(activations)
+
+    # Identify the input pattern that resulted in the maximum activation
+    max_activations = [argmax(vec(activation)) for activation in activations]
+
+    return max_activations
+end
+
+
 # coef, SE, Z, cor(X), D
-function train_until_convergence(coef, SE, R, D, s, G, true_betas; max_iter = 3, threshold = 0.1, N = 10_000) # max_iter = 30, 
+function train_until_convergence(coef, SE, R, D, G, true_betas; max_iter = 20, threshold = 0.1, N = 10_000) # max_iter = 30, 
 
     ## initialize
     P = length(coef)
     q_μ = zeros(P)
     q_α = ones(P) .* 0.10
+    L = sum(q_α)
     q_var = ones(P) * 0.001
 
     cavi_q_μ = copy(q_μ) # zeros(P)
@@ -423,17 +486,56 @@ function train_until_convergence(coef, SE, R, D, s, G, true_betas; max_iter = 3,
     nn_p_causal = 0.01 * ones(P)
     nn_σ2_β = 0.0001 * ones(P)
 
+    K = size(G, 2)
+    P = size(G, 1)
+    H = 10
+
+    layer_1 = Dense(K => H, relu; init = Flux.glorot_normal(gain = 0.0005))
+    layer_output = Dense(H => 2)
+    model = Chain(
+        layer_1, layer_output
+    )
+
+    max_activations = find_max_activation(layer_1, K)
+    println("FIND MAX ACTIVATION")
+    println(max_activations)
+
+    annotations_initial = string.("annot", collect(1:K))
+    annotations_layer1 = string.("annot", collect(1:H))
+
+
+    # # Extract weights from the first layer
+    # layer1_weights = model.layers[1].weight
+
+    # # Extract weights from the second layer
+    # layer2_weights = model.layers[2].weight
+
+    # # Visualize the weights
+    # plot(heatmap(layer1_weights), heatmap(layer2_weights), size=(1000,800))
+    visualize_weights(model, 0)
+    savefig("~/Downloads/scprs_figs/initial_weights.png")
+
     prev_loss = -Inf
 
-    posterior_effect_sizes = []
+    posterior_effect_sizes = Float32[]
     combined_cavi_losses = []
-    corr_true_estimated = []
+    corr_true_estimated = Float32[]
 
     for i in 1:max_iter
         println("Iteration $i")
         # train CAVI using set slab variance and p_causal as inputs; first round
         # cavi_q_u is cavi trained estimated betas, and coef is from iteration before
-        q_μ, q_α, q_var, odds, new_loss, cavi_losses = train_cavi(cavi_q_μ, cavi_q_α, cavi_q_var, nn_p_causal, nn_σ2_β, X_sd, i, coef, SE, R, D)
+        # q_μ, q_α, q_var, odds, new_loss, cavi_losses = train_cavi(cavi_q_μ, cavi_q_α, cavi_q_var, nn_p_causal, nn_σ2_β, X_sd, i, coef, SE, R, D)
+        q_μ, q_α, q_var, odds, new_loss, cavi_losses = train_cavi(
+            nn_p_causal, 
+            nn_σ2_β, 
+            X_sd, 
+            i, 
+            coef, 
+            SE, 
+            R, 
+            D
+        )
 
         println("difference from n, n-1 (%)")
         println(abs(new_loss - prev_loss) / abs(prev_loss))
@@ -444,17 +546,20 @@ function train_until_convergence(coef, SE, R, D, s, G, true_betas; max_iter = 3,
             break
         end
 
+        plot_cavi_losses(cavi_losses, i)
+        savefig("~/Downloads/scprs_figs/cavi_loss_iter$i.png")
+
         prev_loss = copy(new_loss)
 
-        coef = cavi_q_μ .* cavi_q_α
-        SE = sqrt.(cavi_q_var) 
         ## ak: Set α(i) =α and μ(i) =μ
         cavi_q_μ = copy(q_μ)
         cavi_q_α = copy(q_α)
         cavi_q_var = copy(q_var)
 
-        max_abs_post_effect = abs(maximum(q_μ .* q_α))
-        corr_with_true = cor(cavi_q_μ .* q_α, true_betas)
+        max_abs_post_effect = abs(maximum(cavi_q_μ .* cavi_q_α))
+        corr_with_true = cor(cavi_q_μ .* cavi_q_α, true_betas)
+        println("corr_with_true")
+        println(corr_with_true)
 
         # compute new marginal variance from q_α and q_var
         marg_var =  q_α .* q_var
@@ -462,26 +567,48 @@ function train_until_convergence(coef, SE, R, D, s, G, true_betas; max_iter = 3,
             error("q_var or marginal_var has neg value")
         end
 
+        println("q_μ")
+        println(q_μ[1:3])
+
         println("MARGINAL VARIANCE")
-        println(marg_var)
+        println(marg_var[1:3])
+
+        println("conditional VARIANCE")
+        println(q_var[1:3])
         # marg_var = marg_var ./ mean(marg_var)
 
         println("Q_ALPHA")
-        println(q_α)
+        println(q_α[1:3])
+
+        # println("printing weights before nn")
+        # @show layer_output.weight
+        # test_weight = layer_output.weight
+
         # train the neural network using G and the new s and p_causal
-        model = fit_heritability_nn(marg_var, q_α, G, i) #*#
+        model = fit_heritability_nn(model, q_μ, q_var, q_α, G, i) #*#
+        visualize_weights(model, i)
+        savefig("~/Downloads/scprs_figs/post_trainig_weights_iter$i.png")
+
+        # println("printing weights after nn")
+        # @show layer_output.weight
 
         # use the model to compute new σ2_β and p_causal
         outputs = model(transpose(G))
         println("VARIANCE B AFTER NN")
-        println(outputs[1, :])
-        # nn_σ2_β = expm1.(outputs[1, :]) ## ak: apply inverse of log1p to first output; cleaner way to write exp(x)-1
         nn_σ2_β = exp.(outputs[1, :]) 
+        println("sum(nn_σ2_β)")
+        println(sum(nn_σ2_β))
+        nn_σ2_β = nn_σ2_β .* 1.0 ./ sum(nn_σ2_β)
+        println(nn_σ2_β[1:3])
         nn_p_causal = 1 ./ (1 .+ exp.(-outputs[2, :])) ## ak: logistic to recover orig prob
         println("new variance after training")
-        println(nn_σ2_β)
-        println("q odds after training")
-        println(nn_p_causal)
+        println(nn_σ2_β[1:3])
+
+        println("mean nn_p_causal")
+        println(mean(nn_p_causal))
+        nn_p_causal = nn_p_causal .* L ./ sum(nn_p_causal)
+        println("new p_causal after training")
+        println(nn_p_causal[1:3])
 
         push!(posterior_effect_sizes, max_abs_post_effect)
         push!(corr_true_estimated, corr_with_true)
@@ -489,15 +616,54 @@ function train_until_convergence(coef, SE, R, D, s, G, true_betas; max_iter = 3,
 
     end
     
-    plot_max_effect = plot_max_effect_size_vs_iteration(posterior_effect_sizes)
-    savefig("~/Downloads/scprs_figs/plot_max_effect.png")
-    display(plot_max_effect)
+    # plot_max_effect = plot_max_effect_size_vs_iteration(posterior_effect_sizes)
+    # savefig("~/Downloads/scprs_figs/plot_max_effect.png")
+    # display(plot_max_effect)
+    println("corr with true effects")
+    println(corr_true_estimated)
     plot_corr = plot_corr_true_estimated(corr_true_estimated)
     savefig("~/Downloads/scprs_figs/plot_corr.png")
-    display(plot_corr)
+    # display(plot_corr)
     println(posterior_effect_sizes)
     println("cavi losses")
     println(combined_cavi_losses)
 
-    return q_μ, q_α, q_var
+    return q_μ, q_α, q_var, model
 end
+
+
+function train_model(G, s; n_epochs = 100)
+
+    K = size(G, 2)
+    H = 10
+    # same simple nn with 1 hidden layer w/ 10 nodes
+    model = Chain(
+        Dense(K => H, relu; init = Flux.glorot_normal(gain = 0.0005)),
+        Dense(H => 1)
+    )
+
+    # RMSE
+    function loss(model, x, y)
+        yhat = vec(model(transpose(x))) 
+        Flux.mse(yhat, y)
+    end
+
+    opt = Flux.setup(Momentum(), model)
+    data = [(G, s)] 
+
+    for epoch in 1:n_epochs
+        train!(loss, model, data, opt)
+        println("Epoch: $epoch, Loss: $(loss(model, G, s))")
+    end
+    
+    return model
+end
+
+# final_layer1_weights = model.layers[1].weight
+# importance_scores = sum(abs.(final_layer1_weights), dims=1)
+# importance_scores_squared = sum(abs2.(final_layer1_weights), dims=1)
+# plot(bar(1:length(vec(importance_scores)), vec(importance_scores), ylabel="abs(weight)", legend=false),
+# bar(1:length(vec(importance_scores_squared)), vec(importance_scores_squared), ylabel="abs2(weight)", legend=false, c=:green),
+# layout=(2,1), size=(700,600))
+# xlabel!("annotations")
+# savefig("~/Downloads/scprs_figs/learned_weights_score.png")
