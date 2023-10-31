@@ -25,6 +25,7 @@ function draw_slab_s_given_annotations(P; K = 100)
     G_cont = rand(Normal(0, 1.0), P, K_half)  # half continuous annotations (normally distributed)
     G_binom = rand(Binomial(1, 0.5), P, K_half)  # half binomial annotations
     G = hcat(G_cont, G_binom)  # combine annotations
+    # G[:,zero_col] .= 0
    
     # three possibly ways in which the annotations informs per SNP h2
     functions = (
@@ -55,8 +56,8 @@ function standardize(matrix)
     return (matrix .- mean(matrix, dims=1)) ./ std(matrix, dims=1)
 end
 
-function plot_loss_vs_epochs(losses, test_losses, i, epoch_model_taken)
-    plot(1:length(losses), losses, xlabel="Epochs", ylabel="Loss", label="train", title="Loss vs. Epochs, iteration $i, best at $epoch_model_taken", reuse=false)
+function plot_loss_vs_epochs(train_losses, test_losses, i, epoch_model_taken)
+    plot(1:length(train_losses), train_losses, xlabel="Epochs", ylabel="Loss", label="train", title="Loss vs. Epochs, iteration $i, best at $epoch_model_taken", reuse=false)
     plot!(1:length(test_losses), test_losses, lc=:orange, label="test")
     vline!([epoch_model_taken], label="epoch of best")
 end
@@ -69,18 +70,11 @@ function fit_heritability_nn(model, q_μ, q_var, q_α, G, i; n_epochs = 200, pat
 
     # RMSE
     function loss(model, x, y_slab, y_causal) ## ak: need two losses for slab variance and percent causal 
-        # yhat = vec(model(transpose(x))) # need vec to convert 1 x P matrix to length P vec
-        # Flux.mse(yhat, y)
         yhat = model(transpose(x))
         loss_slab = Flux.mse(yhat[1, :], y_slab)
         weighted_loss_slab = weight_slab * loss_slab
         loss_causal = Flux.mse(yhat[2, :], y_causal)
         weighted_loss_causal = weight_causal * loss_causal
-        # println("slab var loss = $loss_slab")
-        # println("slab var loss weighted = $weighted_loss_slab")
-        # println("percent causal loss = $loss_causal")
-        # println("percent causal loss weighted = $weighted_loss_causal")
-        # return loss_slab + loss_causal ## ak: losses summed to form the total loss for training
         return weighted_loss_slab + weighted_loss_causal ## ak: losses summed to form the total loss for training
     end
 
@@ -139,23 +133,12 @@ function fit_heritability_nn(model, q_μ, q_var, q_α, G, i; n_epochs = 200, pat
     test_losses = []
 
     for epoch in 1:n_epochs
-        # println("training!")
-        ## Train, update model's weights based on loss f, data, and optimizer
-        ## Use backpropogation to compute the gradients of the model's parameters wrt the loss, and then the
-        ## optimizer updates the params to minimize this loss
-        ## Data passed to train! is used to train the model
         train!(loss, model, data, opt)
-        # println("epoch = $epoch")
-        ## Compute current loss of the model on the entire dataset represented by G, s, p, without updating the model's weights
-        ## We want to use this to monitor the models performance on the training set after each epoch
         train_loss = loss(model, best_train_data[1], log.(best_train_data[2]), logit.(best_train_data[3]))
         push!(train_losses, train_loss)
-        # println("current loss weighted = $train_loss")
-
         # ak: validation loss
         test_loss = loss(model, best_test_data[1], log.(best_test_data[2]), logit.(best_test_data[3]))
         println("Test loss = $test_loss")
-        
         push!(test_losses, test_loss)
 
         # check for improvement in loss
@@ -185,12 +168,12 @@ function fit_heritability_nn(model, q_μ, q_var, q_α, G, i; n_epochs = 200, pat
 
     # Plotting the loss
     plot_nn_loss = plot_loss_vs_epochs(train_losses, test_losses, i, best_model_epoch)
-    savefig("~/Downloads/scprs_figs/epoch_losses_$i.png")
+    savefig("epoch_losses_$i.png")
     
     return best_model
 end
 
-function simulate_raw()
+function simulate_raw(zero_col)
 
     Random.seed!(0)
 
@@ -444,7 +427,7 @@ function visualize_weights(model, i) #, annotation_names)
     layer2_weights = model.layers[2].weight
     # visualize the weights
     plot(heatmap(layer1_weights, c=cgrad([:blue, :white, :red])), heatmap(layer2_weights), size=(1000,800), 
-    title="Weights for Neurons at iter $i") #, [-Inf, 0, Inf]
+    title="Weights for Neurons after $i NN training") #, [-Inf, 0, Inf]
 end
 
 function find_max_activation(layer, K)
@@ -465,7 +448,7 @@ end
 
 
 # coef, SE, Z, cor(X), D
-function train_until_convergence(coef, SE, R, D, G, true_betas; max_iter = 20, threshold = 0.1, N = 10_000) # max_iter = 30, 
+function train_until_convergence(coef, SE, R, D, G, true_betas, function_choices; max_iter = 20, threshold = 0.1, N = 10_000) # max_iter = 30, 
 
     ## initialize
     P = length(coef)
@@ -476,10 +459,7 @@ function train_until_convergence(coef, SE, R, D, G, true_betas; max_iter = 20, t
 
     cavi_q_μ = copy(q_μ) # zeros(P)
     cavi_q_var = copy(q_var) # ones(P) * 0.001
-    # q_sd = sqrt.(q_var)
     cavi_q_α = copy(q_α) # ones(P) .* 0.10
-    # nn_q_odds = ones(P) 
-    # SSR = ones(P)
 
     X_sd = sqrt.(D ./ N)
 
@@ -488,7 +468,7 @@ function train_until_convergence(coef, SE, R, D, G, true_betas; max_iter = 20, t
 
     K = size(G, 2)
     P = size(G, 1)
-    H = 10
+    H = 5 #3 #10
 
     layer_1 = Dense(K => H, relu; init = Flux.glorot_normal(gain = 0.0005))
     layer_output = Dense(H => 2)
@@ -503,19 +483,13 @@ function train_until_convergence(coef, SE, R, D, G, true_betas; max_iter = 20, t
     annotations_initial = string.("annot", collect(1:K))
     annotations_layer1 = string.("annot", collect(1:H))
 
-
-    # # Extract weights from the first layer
-    # layer1_weights = model.layers[1].weight
-
-    # # Extract weights from the second layer
-    # layer2_weights = model.layers[2].weight
-
-    # # Visualize the weights
-    # plot(heatmap(layer1_weights), heatmap(layer2_weights), size=(1000,800))
     visualize_weights(model, 0)
-    savefig("~/Downloads/scprs_figs/initial_weights.png")
+    savefig("initial_weights.png")
 
     prev_loss = -Inf
+    model_init = deepcopy(model)
+    prev_model = deepcopy(model)
+    prev_prev_model = deepcopy(model)
 
     posterior_effect_sizes = Float32[]
     combined_cavi_losses = []
@@ -547,7 +521,7 @@ function train_until_convergence(coef, SE, R, D, G, true_betas; max_iter = 20, t
         end
 
         plot_cavi_losses(cavi_losses, i)
-        savefig("~/Downloads/scprs_figs/cavi_loss_iter$i.png")
+        savefig("cavi_loss_iter$i.png")
 
         prev_loss = copy(new_loss)
 
@@ -562,23 +536,23 @@ function train_until_convergence(coef, SE, R, D, G, true_betas; max_iter = 20, t
         println(corr_with_true)
 
         # compute new marginal variance from q_α and q_var
-        marg_var =  q_α .* q_var
-        if any(q_var .< 0) | any(marg_var .< 0)
+        marg_var =  cavi_q_α .* cavi_q_var #q_α .* q_var
+        if any(cavi_q_var .< 0) | any(marg_var .< 0)
             error("q_var or marginal_var has neg value")
         end
 
         println("q_μ")
-        println(q_μ[1:3])
+        println(cavi_q_μ[1:3])
 
         println("MARGINAL VARIANCE")
         println(marg_var[1:3])
 
         println("conditional VARIANCE")
-        println(q_var[1:3])
+        println(cavi_q_var[1:3])
         # marg_var = marg_var ./ mean(marg_var)
 
         println("Q_ALPHA")
-        println(q_α[1:3])
+        println(cavi_q_α[1:3])
 
         # println("printing weights before nn")
         # @show layer_output.weight
@@ -586,14 +560,17 @@ function train_until_convergence(coef, SE, R, D, G, true_betas; max_iter = 20, t
 
         # train the neural network using G and the new s and p_causal
         model = fit_heritability_nn(model, q_μ, q_var, q_α, G, i) #*#
-        visualize_weights(model, i)
-        savefig("~/Downloads/scprs_figs/post_trainig_weights_iter$i.png")
+
+        trained_model = deepcopy(model)
+        visualize_weights(trained_model, i)
+        savefig("post_trainig_weights_iter$i.png")
+        println("NN weights saved")
 
         # println("printing weights after nn")
         # @show layer_output.weight
 
-        # use the model to compute new σ2_β and p_causal
-        outputs = model(transpose(G))
+        # use model to compute new σ2_β and p_causal to use in CAVI at next iteration
+        outputs = trained_model(transpose(G))
         println("VARIANCE B AFTER NN")
         nn_σ2_β = exp.(outputs[1, :]) 
         println("sum(nn_σ2_β)")
@@ -614,56 +591,74 @@ function train_until_convergence(coef, SE, R, D, G, true_betas; max_iter = 20, t
         push!(corr_true_estimated, corr_with_true)
         push!(combined_cavi_losses, cavi_losses)
 
+
+        prev_prev_model = deepcopy(prev_model) #at iter 1, initialized model
+        prev_model = deepcopy(model) #at iter 1, trained nn model
+
     end
     
     # plot_max_effect = plot_max_effect_size_vs_iteration(posterior_effect_sizes)
-    # savefig("~/Downloads/scprs_figs/plot_max_effect.png")
+    # savefig("plot_max_effect.png")
     # display(plot_max_effect)
     println("corr with true effects")
     println(corr_true_estimated)
     plot_corr = plot_corr_true_estimated(corr_true_estimated)
-    savefig("~/Downloads/scprs_figs/plot_corr.png")
+    savefig("plot_corr.png")
     # display(plot_corr)
     println(posterior_effect_sizes)
     println("cavi losses")
     println(combined_cavi_losses)
 
-    return q_μ, q_α, q_var, model
-end
+    final_layer1_weights = prev_prev_model.layers[1].weight
+    # final_layer1_weights = model.layers[1].weight
+    importance_scores = sum(abs.(final_layer1_weights), dims=1)
+    importance_scores_squared = sum(abs2.(final_layer1_weights), dims=1)
+    plot(heatmap(reshape(function_choices, (1,100)), c=palette(:Blues_3,3), size=(690,50), legend=:left),
+    bar(1:length(vec(importance_scores)), vec(importance_scores), ylabel="abs(weight)", legend=false),
+    bar(1:length(vec(importance_scores_squared)), vec(importance_scores_squared), ylabel="abs2(weight)", legend=false, c=:green),
+    layout=(3,1), size=(700,600))
+    xlabel!("annotations")
+    savefig("learned_weights_score.png")
 
-
-function train_model(G, s; n_epochs = 100)
-
-    K = size(G, 2)
-    H = 10
-    # same simple nn with 1 hidden layer w/ 10 nodes
-    model = Chain(
-        Dense(K => H, relu; init = Flux.glorot_normal(gain = 0.0005)),
-        Dense(H => 1)
-    )
-
-    # RMSE
-    function loss(model, x, y)
-        yhat = vec(model(transpose(x))) 
-        Flux.mse(yhat, y)
+    function cavi_prior(beta, max_int)
+        return cavi_q_α[max_int] * pdf(Normal(0, sqrt(cavi_q_var[max_int])), beta)
     end
 
-    opt = Flux.setup(Momentum(), model)
-    data = [(G, s)] 
-
-    for epoch in 1:n_epochs
-        train!(loss, model, data, opt)
-        println("Epoch: $epoch, Loss: $(loss(model, G, s))")
+    function cavi_prior_same_snp(beta, max_int)
+        return cavi_q_α[max_int] * pdf(Normal(0, sqrt(cavi_q_var[max_int])), beta)
     end
+
+    function original_prior(beta, pi)
+        # ak: update later for no hardcoded values
+        sigma_spike = sqrt(0.001)
+        sigma_slab = sqrt(0.10 / 89)
     
-    return model
-end
+        return pi * pdf(Normal(0, sigma_slab), beta) + (1 - pi) * pdf(Normal(0, sigma_spike), beta)
+    end
 
-# final_layer1_weights = model.layers[1].weight
-# importance_scores = sum(abs.(final_layer1_weights), dims=1)
-# importance_scores_squared = sum(abs2.(final_layer1_weights), dims=1)
-# plot(bar(1:length(vec(importance_scores)), vec(importance_scores), ylabel="abs(weight)", legend=false),
-# bar(1:length(vec(importance_scores_squared)), vec(importance_scores_squared), ylabel="abs2(weight)", legend=false, c=:green),
-# layout=(2,1), size=(700,600))
-# xlabel!("annotations")
-# savefig("~/Downloads/scprs_figs/learned_weights_score.png")
+    beta_grid = range(-0.1, stop=0.1, length=20)
+
+    max_alpha = findmax(cavi_q_α)[2]
+    # ak: update later for no hardcoded values
+    Z = [original_prior(b1, 0.089) * cavi_prior(b2, max_alpha) for b1 in beta_grid, b2 in beta_grid]
+
+    contour(beta_grid, beta_grid, Z, xlabel="Prior density, no training", ylabel="Prior density, NN training", color=:rust)
+    plot!(beta_grid, beta_grid, label="x=y")
+    plot!(size=(700,600))
+    savefig("prior_density_at_max_q_alpha.png")
+
+    # Z_same = [original_prior(b1, 0.089) * cavi_prior(b2, 517) for b1 in beta_grid, b2 in beta_grid]
+
+
+    # contour(beta_grid, beta_grid, Z, xlabel="Prior density, no training", ylabel="Prior density, NN training", color=:rust)
+    # plot!(beta_grid, beta_grid, label="x=y")
+    # plot!(size=(700,600))
+    # savefig("varying_G_density.png")
+
+    # contour(beta_grid, beta_grid, Z_same, xlabel="Prior density, no training", ylabel="Prior density, NN training", color=:rust)
+    # plot!(beta_grid, beta_grid, label="x=y")
+    # plot!(size=(700,600))
+    # savefig("varying_G_density_same.png")
+
+    return cavi_q_μ, cavi_q_α, cavi_q_var, prev_prev_model, model_init #model
+end
