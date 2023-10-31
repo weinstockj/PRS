@@ -19,7 +19,7 @@ Check out the true $\beta$ distribution with:
 
 ## Train PRS
 
-`test_new = train_until_convergence(ss[1], ss[2], ss[4], ss[5], raw[5], raw[6], raw[2])`
+`test_new = train_until_convergence(ss[1], ss[2], ss[4], ss[5], raw[6], raw[2], raw[8])`
 
 ## Unit testing
 
