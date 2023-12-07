@@ -17,7 +17,7 @@ using SnpArrays
 
 function read_plink_compute_cor()
     const LD_block_bed = SnpArray(SnpArrays.datadir("test_data/1_4380811-5913893_base.bed"))
-    LD_block_matrix = convert(Matrix{Float64}, LD_block_bed)
+    LD_block_matrix = convert(Matrix{Int8}, LD_block_bed)
     LD_block_R = cor(LD_block_matrix)
     return LD_block_R
 end
