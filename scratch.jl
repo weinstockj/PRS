@@ -16,7 +16,7 @@ using SnpArrays
 # using ReverseDiff: GradientTape, gradient, gradient!, compile, GradientConfig, DiffResults
 
 function read_plink_compute_cor()
-    const LD_block_bed = SnpArray(SnpArrays.datadir("/home/akim126/data-abattle4/april/hi_julia/phase3/1_4380811-5913893_base.bed"))
+    const LD_block_bed = SnpArray(SnpArrays.datadir("test_data/1_4380811-5913893_base.bed"))
     LD_block_matrix = convert(Matrix{Float64}, LD_block_bed)
     LD_block_R = cor(LD_block_matrix)
     return LD_block_R
