@@ -10,9 +10,18 @@ using Plots
 using Random
 using StatsBase: sample
 using HypothesisTests: ApproximateTwoSampleKSTest
+using SnpArrays
 # import AbstractDifferentiation as AD
 # using Enzyme
 # using ReverseDiff: GradientTape, gradient, gradient!, compile, GradientConfig, DiffResults
+
+function read_plink_compute_cor()
+    const LD_block_bed = SnpArray(SnpArrays.datadir("/home/akim126/data-abattle4/april/hi_julia/phase3/1_4380811-5913893_base.bed"))
+    LD_block_matrix = convert(Matrix{Float64}, LD_block_bed)
+    LD_block_R = cor(LD_block_matrix)
+    return LD_block_R
+end
+
 
 # P is number of SNPs, K is number of annotations
 # output is normalized variance per SNP e.g., s * h2 / P where h2 / P 
@@ -173,7 +182,7 @@ function fit_heritability_nn(model, q_μ, q_var, q_α, G, i; n_epochs = 200, pat
     return best_model
 end
 
-function simulate_raw(zero_col)
+function simulate_raw()
 
     Random.seed!(0)
 
@@ -638,9 +647,9 @@ function train_until_convergence(coef, SE, R, D, G, true_betas, function_choices
 
     beta_grid = range(-0.1, stop=0.1, length=20)
 
-    max_alpha = findmax(cavi_q_α)[2]
+    max_α = findmax(cavi_q_α)[2]
     # ak: update later for no hardcoded values
-    Z = [original_prior(b1, 0.089) * cavi_prior(b2, max_alpha) for b1 in beta_grid, b2 in beta_grid]
+    Z = [original_prior(b1, 0.089) * cavi_prior(b2, max_α) for b1 in beta_grid, b2 in beta_grid]
 
     contour(beta_grid, beta_grid, Z, xlabel="Prior density, no training", ylabel="Prior density, NN training", color=:rust)
     plot!(beta_grid, beta_grid, label="x=y")
