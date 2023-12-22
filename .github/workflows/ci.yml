@@ -67,7 +67,7 @@ jobs:
             Pkg.add("Documenter")
             using Documenter: doctest
             using PRSFNN
-            doctest(InferCausalGraph)' # change MYPACKAGE to the name of your package
+            doctest(PRSFNN)' # change MYPACKAGE to the name of your package
       - run: julia --project=docs docs/make.jl
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
