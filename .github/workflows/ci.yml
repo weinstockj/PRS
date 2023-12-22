@@ -4,12 +4,10 @@ on:
     branches:
       - master
       - dev
-      - public
   push:
     branches:
       - master
       - dev 
-      - public
     tags: '*'
 jobs:
   test:
@@ -68,7 +66,7 @@ jobs:
             using Pkg
             Pkg.add("Documenter")
             using Documenter: doctest
-            using InferCausalGraph
+            using PRSFNN
             doctest(InferCausalGraph)' # change MYPACKAGE to the name of your package
       - run: julia --project=docs docs/make.jl
         env:
