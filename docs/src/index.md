@@ -4,7 +4,7 @@ Steps to load this module from the root directory:
 
 1. Run `julia --color=yes --project=.` (this code expects 1.9.0)
 3. Run `using Revise`
-4. Run `using PRSFNN`
+4. Run `using PRSFNN` # takes 32 seconds on my machine
 
 Now the functions have been sourced. 
 
@@ -25,3 +25,12 @@ Check out the true $\beta$ distribution with:
 ## Unit testing
 
 Run unit tests with `includet("test/runtests.jl")`
+
+## Functions
+
+```@docs
+rss 
+elbo
+joint_log_prob
+train_until_convergence
+```
