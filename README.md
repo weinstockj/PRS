@@ -1,3 +1,4 @@
+[![Dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://weinstockj.github.io/PRS/dev)
 [![CI](https://github.com/weinstockj/PRS/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/weinstockj/PRS/actions/workflows/ci.yml)
 
 Steps to load this module from the root directory:
