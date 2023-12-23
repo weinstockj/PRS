@@ -122,8 +122,9 @@ function find_max_activation(layer, K)
     return max_activations
 end
 
-
-# coef, SE, Z, cor(X), D
+"""
+    `train_until_convergence(coef, SE, R, D, G, true_betas, function_choices; max_iter = 20, threshold = 0.1, N = 10_000)`
+"""
 function train_until_convergence(coef, SE, R, D, G, true_betas, function_choices; max_iter = 20, threshold = 0.1, N = 10_000) # max_iter = 30, 
 
     ## initialize

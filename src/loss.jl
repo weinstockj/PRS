@@ -183,9 +183,9 @@ function log_prior(β, σ2_β, p_causal)
 end
 
 """
+    `rss(β, coef, SE, R)`
     Calculate the summary statistic RSS likelihood:
 
-    rss(β, coef, SE, R)
 
 ```julia-repl
 rss(
@@ -211,8 +211,11 @@ function rss(β, coef, SE, R)
 end
 
 """
-```julia-repl
+`joint_log_prob(β, coef, SE, R, σ2_β, p_causal)`
+
 Compute the joint log probability of the model
+
+```julia-repl
 
 joint_log_prob(
     [0.0011, .0052, 0.0013],

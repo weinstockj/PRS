@@ -1,7 +1,7 @@
 # Inside make.jl
 push!(LOAD_PATH,"../src/")
-using PRSFNN
-using Documenter
+using Documenter, PRSFNN
+
 makedocs(
          sitename = "PRSFNN.jl",
          modules  = [PRSFNN],

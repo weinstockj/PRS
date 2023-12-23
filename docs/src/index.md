@@ -29,8 +29,8 @@ Run unit tests with `includet("test/runtests.jl")`
 ## Functions
 
 ```@docs
-rss 
-elbo
-joint_log_prob
-train_until_convergence
+PRSFNN.rss 
+PRSFNN.elbo
+PRSFNN.joint_log_prob
+PRSFNN.train_until_convergence
 ```
