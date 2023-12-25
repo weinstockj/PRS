@@ -25,7 +25,7 @@ Check out the true $\beta$ distribution with:
 
 ## Unit testing
 
-Run unit tests with `include("test/runtests.jl")`
+Run unit tests with `includet("test/runtests.jl")`
 
 ## Contact
 
