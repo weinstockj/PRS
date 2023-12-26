@@ -1,13 +1,3 @@
-
-function read_plink_compute_cor()
-    LD_block_bed = SnpArray(SnpArrays.datadir("test_data/1_4380811-5913893_base.bed"))
-    LD_block_matrix = convert(Matrix{Int8}, LD_block_bed)
-    LD_block_R = cor(LD_block_matrix)
-    return LD_block_R
-end
-
-
-
 function standardize(matrix)
     return (matrix .- mean(matrix, dims=1)) ./ std(matrix, dims=1)
 end
@@ -23,7 +13,7 @@ end
     log_prior(β, σ2_β, p_causal)
     Calculates the log density of β based on a spiek and slab prior
 """
-function log_prior(β, σ2_β, p_causal)
+function log_prior(β::Vector, σ2_β::Vector, p_causal::Vector)
 
     P = length(β)
     # prob_slab = 0.10
@@ -50,7 +40,7 @@ rss(
 )
 ```
 """
-function rss(β, coef, SE, R)
+function rss(β::Vector, coef::Vector, SE::Vector, R::AbstractArray)
     # .000349, 23 allocations no turbo with P = 100
 
     # .01307 with P = 500
@@ -100,7 +90,7 @@ elbo(
 )
 ```
 """
-function elbo(z, q_μ, log_q_var, coef, SE, R, σ2_β, p_causal)
+function elbo(z::Vector, q_μ::Vector, log_q_var::Vector, coef::Vector, SE::Vector, R::AbstractArray, σ2_β::Vector, p_causal::Vector)
     q_var = exp.(log_q_var)
     q = MvNormal(q_μ, Diagonal(I * q_var))
     q_sd = sqrt.(q_var)

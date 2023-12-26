@@ -8,7 +8,7 @@ function draw_slab_s_given_annotations(P; K = 100)
     # G = rand(Normal(0, 1.0), P, K) # matrix of annotations - could be made more realistic?
     G_cont = rand(Normal(0, 1.0), P, K_half)  # half continuous annotations (normally distributed)
     G_binom = rand(Binomial(1, 0.5), P, K_half)  # half binomial annotations
-    G = hcat(G_cont, G_binom)  # combine annotations
+    G::Matrix{Float64} = hcat(G_cont, G_binom)  # combine annotations
     # G[:,zero_col] .= 0
    
     # three possibly ways in which the annotations informs per SNP h2
@@ -21,27 +21,28 @@ function draw_slab_s_given_annotations(P; K = 100)
     choose_f = Categorical([.3, .05, .65])
     # pick 1 of the 3 functions
     choices = [rand(choose_f) for i in 1:K]
-    ϕ = [functions[choices[i]] for i in 1:K] # randomly pick a linear or quadratic transformation
+    ϕ::Vector{Function} = [functions[choices[i]] for i in 1:K] # randomly pick a linear or quadratic transformation
     
     σ2 = zeros(P) # P = 1000, K = 100
-    for i in 1:P
-        # define variance of SNPs as sum of all of the ϕ(G) + one interaction term between 
-        # the first two annotations to throw in some complexity
-        σ2[i] = exp(sum([ϕ[j](G[i, j]) for j in 1:K]) + ϕ[1](G[i, 1]) * ϕ[2](G[i, 2]))
+    @inbounds for i in 1:P
+        # define variance of SNPs as sum of all of the ϕ(G)
+        @inbounds for j in 1:K
+            σ2[i] += ϕ[j](G[i, j])
+        end
+        # σ2[i] = exp(σ2[i] + ϕ[1](G[i, 1]) * ϕ[2](G[i, 2]))
+        σ2[i] = exp(σ2[i])
         # exp(sum([raw[9][j](raw[6][1, j]) for j in 1:100]) + raw[9][1](raw[6][1, 1]) * raw[9][2](raw[6][1, 2]))
     end
 
-    s = σ2 ./ mean(σ2) # normalize by average variance
+    s::Vector{Float64} = σ2 ./ mean(σ2) # normalize by average variance
 
     return s, G, choices, ϕ, σ2
 end
 
-function simulate_raw()
+function simulate_raw(;N = 10_000, P = 1_000, K = 100)
 
     Random.seed!(0)
 
-    N = 10_000
-    P = 1_000
     eigenvalues = sort(rand(Exponential(1), P))
     eigenvalues[length(eigenvalues)] = eigenvalues[length(eigenvalues)] * 10
     D = Diagonal(eigenvalues)
@@ -58,7 +59,7 @@ function simulate_raw()
     # Simulation annotations and create expected s parameter for causal SNPs
     # s, G, _ = draw_slab_s_given_annotations(sum(γ))
     # s, G, _ = draw_slab_s_given_annotations(P)
-    s, G, function_choices, phi, sigma_squared = draw_slab_s_given_annotations(P)
+    s, G, function_choices, phi, sigma_squared = draw_slab_s_given_annotations(P; K = K)
 
     spike = rand(Normal(0, 0.001), P)
     slab  = rand(Normal(0,  sqrt(h2 / L)), P)
@@ -78,7 +79,7 @@ function simulate_raw()
 end
 
 """
-estimate_sufficient_statistics(X, Y)
+`estimate_sufficient_statistics(X, Y)`
 
 Estimate the sufficient statistics for the model given genotypes and phenotype
 

@@ -15,6 +15,7 @@ using SnpArrays
 using LoggingExtras
 using Dates
 using SnoopPrecompile  
+using Comonicon
 
 # include in logging call, e.g., @info "$(ltime()) message"
 function ltime()
@@ -25,13 +26,15 @@ end
 include("loss.jl")
 include("train.jl")
 include("simulate.jl")
+include("LD.jl")
+include("main.jl")
 
 export joint_lob_prob, RSS, elbo, train_until_convergence
 
 # speed up precompilation for end users
 @precompile_setup begin
     @precompile_all_calls begin
-        raw = simulate_raw()
+        raw = simulate_raw(;N = 1_000, P = 30, K = 10)
         ss = estimate_sufficient_statistics(raw[1], raw[3])
     end
 end
