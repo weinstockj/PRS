@@ -56,8 +56,8 @@ function fit_heritability_nn(model, q_μ, q_var, q_α, G, i; n_epochs = 200, pat
     data = [
             (
             Float32.(best_train_data[1]), # to address Float64 -> Float32 Flux complaint
-            log.(best_train_data[2]), # later apply inverse of exp.(x) .- 1.0
-            logit.(best_train_data[3]) # later apply logistic to recover orig prob
+            Float32.(log.(best_train_data[2])), # later apply inverse of exp.(x) .- 1.0
+            Float32.(logit.(best_train_data[3])) # later apply logistic to recover orig prob
         )
         ]
     
@@ -232,8 +232,16 @@ end
 
 """
     `train_until_convergence(coef, SE, R, D, G; max_iter = 20, threshold = 0.1, N = 10_000)`
+
+    # Arguments
+    - `coef::Vector`: A length P vector of effect sizes
+    - `SE::Vector`: A length P vector of standard errors
+    - 'R::AbstractArray': A P x P correlation matrix
+    - 'D::Vector': A length P vector of the sum of squared genotypes
+    - 'G::AbstractArray': A P x K matrix of annotations
+    
 """
-function train_until_convergence(coef, SE, R, D, G; max_iter = 20, threshold = 0.1, N = 10_000) # max_iter = 30, 
+function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, D::Vector, G::AbstractArray; max_iter = 20, threshold = 0.1, N = 10_000) # max_iter = 30, 
 # function train_until_convergence(coef, SE, R, D, G, true_betas, function_choices; max_iter = 20, threshold = 0.1, N = 10_000) # max_iter = 30, 
 
     ## initialize
@@ -297,7 +305,9 @@ function train_until_convergence(coef, SE, R, D, G; max_iter = 20, threshold = 0
             D
         )
 
-        @debug "$(ltime()) difference from n, n-1 (%) = $(abs(new_loss - prev_loss) / abs(prev_loss))"
+        if i >= 2
+            @debug "$(ltime()) difference from n, n-1 (%) = $(abs(new_loss - prev_loss) / abs(prev_loss))"
+        end
 
         # check for convergence
         if abs(new_loss - prev_loss) / abs(prev_loss) < threshold
