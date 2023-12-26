@@ -17,8 +17,8 @@ using Statistics: cor
         [-0.019, 0.013, -.0199],
         [.0098, .0098, .0102],
         [1.0 .03 .017; .031 1.0 -0.03; .017 -0.02 1.0],
-        0.01,
-        0.10
+        [0.01, 0.01, 0.01],
+        [0.10, 0.10, 0.10]
        ) - 15.95427) < .0001
 
     # @test abs(elbo(
@@ -32,7 +32,7 @@ using Statistics: cor
     #     0.10
     #    ) - -5.10) < 0.1
     function test_complete_run()
-        raw = simulate_raw()
+        raw = simulate_raw(;N = 10_000, P = 1000, K = 100)
         ss = estimate_sufficient_statistics(raw[1], raw[3])
         out = train_until_convergence(ss[1], ss[2], ss[4], ss[5], raw[6])
         @test cor(out[1] .* out[2], raw[2]) > 0.7
