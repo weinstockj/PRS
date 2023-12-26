@@ -7,7 +7,10 @@ Steps to load this module from the root directory:
 3. Run `using Revise` # while developing
 4. Run `using PRSFNN`
 
-Now the functions have been sourced. 
+Now the functions have been loaded. 
+To call an internal function, use `PRSFNN.function` 
+
+To call Julia in debugger mode, `JULIA_DEBUG=PRSFNN julia --color=yes --project =.`
 
 ## Simulating GWAS data
 
@@ -21,7 +24,7 @@ Check out the true $\beta$ distribution with:
 
 ## Train PRS
 
-`test_new = train_until_convergence(ss[1], ss[2], ss[4], ss[5], raw[6], raw[2], raw[8])`
+`test_new = train_until_convergence(ss[1], ss[2], ss[4], ss[5], raw[6])`
 
 ## Unit testing
 

@@ -29,10 +29,12 @@ Run unit tests with `includet("test/runtests.jl")`
 ## Functions
 
 ```@docs
+PRSFNN.main
 PRSFNN.rss 
 PRSFNN.elbo
 PRSFNN.joint_log_prob
 PRSFNN.train_until_convergence
 PRSFNN.log_prior
 PRSFNN.estimate_sufficient_statistics
+PRSFNN.compute_LD
 ```
