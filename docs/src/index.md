@@ -20,7 +20,7 @@ Check out the true $\beta$ distribution with:
 
 ## Train PRS
 
-`test_new = train_until_convergence(ss[1], ss[2], ss[4], ss[5], raw[6], raw[2], raw[8])`
+`test_new = train_until_convergence(ss[1], ss[2], ss[4], ss[5], raw[6])`
 
 ## Unit testing
 
@@ -33,4 +33,6 @@ PRSFNN.rss
 PRSFNN.elbo
 PRSFNN.joint_log_prob
 PRSFNN.train_until_convergence
+PRSFNN.log_prior
+PRSFNN.estimate_sufficient_statistics
 ```
