@@ -37,4 +37,6 @@ PRSFNN.train_until_convergence
 PRSFNN.log_prior
 PRSFNN.estimate_sufficient_statistics
 PRSFNN.compute_LD
+PRSFNN.comonicon_install
+PRSFNN.comonicon_install_path
 ```
