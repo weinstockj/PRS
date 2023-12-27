@@ -89,9 +89,8 @@ function estimate_sufficient_statistics(X::AbstractArray, Y::Vector)
     P = size(X, 2)
     D = map(x -> sum(x .^ 2), eachcol(X))
     coef = X'Y ./ D
-    mse = map(i -> var(Y - view(coef, i) .* view(X, :, i)), 1:P)
-    SE2 = mse ./ D
-    SE = sqrt.(SE2)
+    mse = map(i -> var(Y .- view(coef, i) .* view(X, :, i)), 1:P)
+    SE = sqrt.(mse ./ D)
     Z = coef ./ SE
     R = cor(X)
     return coef, SE, Z, cor(X), D
