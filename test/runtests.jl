@@ -31,6 +31,39 @@ using Statistics: cor
     #     0.01,
     #     0.10
     #    ) - -5.10) < 0.1
+    function test_nn()
+
+        P = 300
+        K = 50
+
+        model = Chain(
+                Dense(K => 5, relu; init = Flux.glorot_normal(gain = 0.0005)),
+                Dense(5 => 2)
+        )
+
+        G = rand(Normal(0, 1), P, K)
+
+        q_var = 0.1 .* exp.((G * rand(Normal(0, 0.3), K))) 
+        q_α = 1.0 ./ (1.0 .+ exp.(-1.0 .* (-2.0 .+ q_var)))
+
+        trained_model = PRSFNN.fit_heritability_nn(
+                model, 
+                q_var, 
+                q_α, 
+                G;
+                patience = 100
+        )
+
+        yhat = transpose(trained_model(transpose(G)))
+        yhat[:, 1] .= exp.(yhat[:, 1])
+        yhat[:, 2] .= 1.0 ./ (1.0 .+ exp.(-yhat[:, 2]))
+
+        @test cor(yhat[:, 1], q_var) > .8
+        @test cor(yhat[:, 2], q_α) > .8
+    end
+
+    test_nn()
+
     function test_complete_run()
         raw = simulate_raw(;N = 10_000, P = 1000, K = 100)
         ss = estimate_sufficient_statistics(raw[1], raw[3])
@@ -39,4 +72,6 @@ using Statistics: cor
     end
 
     test_complete_run()
+
+        
 end
