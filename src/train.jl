@@ -1,8 +1,51 @@
-# how many epochs do we need?
-# is momentum the right choice here as optimizer?
-## ak: modified to have two outputs, and defined two losses: loss_slab, loss_causal
-function fit_heritability_nn(model, q_μ, q_var, q_α, G, i; n_epochs = 200, patience=100, mse_improvement_threshold=0.1, test_ratio=0.2, num_splits=10, weight_slab=1, weight_causal=1)
+function check_no_nan(data)
 
+    if sum(isnan.(data[1])) > 0
+        error("NaN detected.")
+    end
+    
+    if sum(isnan.(data[2])) > 0
+        error("NaN detected.")
+    end
+
+    if sum(isnan.(data[3])) > 0
+        error("NaN detected.")
+    end
+end
+
+"""
+ fit_heritability_nn(model, q_μ, q_var, q_alpha, G)
+
+ Fit the heritability neural network model.
+
+    # Arguments
+    - `model::Chain`: A neural network model
+    - `q_μ::Vector`: A length P vector of posterior means
+    - `q_var::Vector`: A length P vector of posterior variances
+    - `q_α::Vector`: A length P vector of posterior probabilities of being causal
+    - `G::AbstractArray`: A P x K matrix of annotations
+
+```julia-repl
+    model = Chain(
+        Dense(20 => 5, relu; init = Flux.glorot_normal(gain = 0.0005)),
+        Dense(5 => 2)
+    )
+
+    G = rand(Normal(0, 1), 100, 20)
+    q_var = (G * rand(Normal(0, 0.10), 20)) .^ 2
+    q_α = 1.0 ./ (1.0 .+ exp.(-1.0 .* (-2.0 .+ q_var)))
+    trained_model = PRSFNN.fit_heritability_nn(
+        model, 
+        q_var, 
+        q_α, 
+        G
+    )
+    yhat = transpose(trained_model(transpose(G)))
+    yhat[:, 1] .= exp.(yhat[:, 1])
+    yhat[:, 2] .= 1.0 ./ (1.0 .+ exp.(-yhat[:, 2]))
+```
+"""
+function fit_heritability_nn(model, q_var, q_α, G, i=1; n_epochs = 250, patience=100, mse_improvement_threshold=0.01, test_ratio=0.2, num_splits=5, weight_slab=1, weight_causal=1)
 
     # RMSE
     function loss(model, x, y_slab, y_causal) ## ak: need two losses for slab variance and percent causal 
@@ -11,15 +54,38 @@ function fit_heritability_nn(model, q_μ, q_var, q_α, G, i; n_epochs = 200, pat
         weighted_loss_slab = weight_slab * loss_slab
         loss_causal = Flux.mse(yhat[2, :], y_causal)
         weighted_loss_causal = weight_causal * loss_causal
-        return weighted_loss_slab + weighted_loss_causal ## ak: losses summed to form the total loss for training
+        total_loss = weighted_loss_slab + weighted_loss_causal ## ak: losses summed to form the total loss for training
+        # if !isfinite(total_loss)
+        #     println("loss_slab = $loss_slab")
+        #     println("loss_causal = $loss_causal")
+        #     println("y_hat[2, :] = $(yhat[2, :])")
+        #     println("y_causal = $(y_causal)")
+        #     error("Total loss is not finite.")
+        # end
+        return total_loss
     end
 
-    logit(x) = log((x) ./ (1.0 .- x)) 
+    function clamp(x, ϵ = 1e-4)
+        x = max.(min.(x, 1.0 - ϵ), ϵ) # to avoid Inf with logit transformation later
+        return x
+    end
+
+    function logit(x)
+        x = clamp(x)   
+        # for i in eachindex(x)
+        #     println("x[i] = $(x[i])")
+        #     if !isfinite(log(x[i] ./ (1 .- x[i])))
+        #         error("x[i] = $(x[i])")
+        #     end
+        # end
+
+        return log.(x ./ (1 .- x))
+    end
     # G_standardized = standardize(G)
 
     best_ks_statistic = Inf
-    best_train_data = ()
-    best_test_data = ()
+    best_train_data = []
+    best_test_data = []
 
     P = length(q_var)
 
@@ -32,55 +98,61 @@ function fit_heritability_nn(model, q_μ, q_var, q_α, G, i; n_epochs = 200, pat
         train_indices = permuted_indices[1:end-num_test]
         test_indices = permuted_indices[end-num_test+1:end]
 
-        # ak: get matching posterior means in training and testing
-        train_posterior_means = q_μ[train_indices]
-        test_posterior_means = q_μ[test_indices]
+        # ak: get matching posterior variances in training and testing
+        train_posterior_vars = q_var[train_indices]
+        test_posterior_vars = q_var[test_indices]
 
         # ak: compute the KS statistic and pick the split with smallest KS stats
-        ks_test = ApproximateTwoSampleKSTest(train_posterior_means, test_posterior_means)
+        ks_test = ApproximateTwoSampleKSTest(train_posterior_vars, test_posterior_vars)
         ks_n = ks_test.n_x*ks_test.n_y/(ks_test.n_x+ks_test.n_y)
         ks_statistic = (sqrt(ks_n)*ks_test.δ)
 
+
         if ks_statistic < best_ks_statistic
             best_ks_statistic = ks_statistic
-            best_train_data = (G[train_indices, :], q_var[train_indices], q_α[train_indices])
-            best_test_data = (G[test_indices, :], q_var[test_indices], q_α[test_indices])
+            best_train_data = [Float32.(G[train_indices, :]), Float32.(q_var[train_indices]), Float32.(q_α[train_indices])]
+            best_test_data = [Float32.(G[test_indices, :]), Float32.(q_var[test_indices]), Float32.(q_α[test_indices])]
         end
+
+        # @info "$(ltime()) best KS statistic = $best_ks_statistic"
     end
 
-    # Momentum()
-    # RAdam()
-    # AdaDelta()
-    # AdaGrad(0.01)
     opt = Flux.setup(Momentum(), model)
-    data = [
+    data = [ 
             (
-            Float32.(best_train_data[1]), # to address Float64 -> Float32 Flux complaint
-            Float32.(log.(best_train_data[2])), # later apply inverse of exp.(x) .- 1.0
-            Float32.(logit.(best_train_data[3])) # later apply logistic to recover orig prob
-        )
-        ]
+            best_train_data[1], 
+            log.(best_train_data[2]), # later apply inverse of exp.(x) 
+            logit.(best_train_data[3]) # later apply logistic to recover orig prob
+        
+            )
+    ]
+    
+    # println(data)
     
     best_loss = Inf
     best_model = deepcopy(model)
     count_since_best = 0
-    best_model_epoch = Inf
-    train_losses = []
-    test_losses = []
+    best_model_epoch = 1
+    train_losses = Float64[]
+    test_losses = Float64[]
 
     for epoch in 1:n_epochs
+        check_no_nan(data[1])
         train!(loss, model, data, opt)
         train_loss = loss(model, best_train_data[1], log.(best_train_data[2]), logit.(best_train_data[3]))
         push!(train_losses, train_loss)
         # ak: validation loss
         test_loss = loss(model, best_test_data[1], log.(best_test_data[2]), logit.(best_test_data[3]))
         # println("Test loss = $test_loss")
+        # println("Train loss = $train_loss")
         push!(test_losses, test_loss)
 
         # check for improvement in loss
-        mse_improvement = best_loss - test_loss
+        mse_improvement = (test_loss - best_loss) / test_loss
+
+        # println("MSE improvement = $mse_improvement")
         # if improvement from prev iteration is greater than threshold
-        if mse_improvement > mse_improvement_threshold
+        if mse_improvement < -mse_improvement_threshold
             best_loss = test_loss
             count_since_best = 0
             # set current epoch as to when best model was observed
@@ -105,11 +177,12 @@ function fit_heritability_nn(model, q_μ, q_var, q_α, G, i; n_epochs = 200, pat
     # Plotting the loss
     # plot_nn_loss = plot_loss_vs_epochs(train_losses, test_losses, i, best_model_epoch)
     # savefig("epoch_losses_$i.png")
-    
+    # println("test_loss = $test_losses")
+    # println("train_loss = $train_losses")
     return best_model
 end
 
-function train_cavi(p_causal, σ2_β, X_sd, i_iter, coef, SE, R, D; n_elbo = 50, max_iter = 10, N = 10_000, σ2 = 1.0)
+function train_cavi(p_causal, σ2_β, X_sd, i_iter, coef, SE, R, D; n_elbo = 10, max_iter = 10, N = 10_000, σ2 = 1.0)
    
     P = length(coef)
 
@@ -270,12 +343,12 @@ function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, D::
         layer_1, layer_output
     )
 
-    max_activations = find_max_activation(layer_1, K)
+    # max_activations = find_max_activation(layer_1, K)
     # println("FIND MAX ACTIVATION")
     # println(max_activations)
 
-    annotations_initial = string.("annot", collect(1:K))
-    annotations_layer1 = string.("annot", collect(1:H))
+    # annotations_initial = string.("annot", collect(1:K))
+    # annotations_layer1 = string.("annot", collect(1:H))
 
     # visualize_weights(model, 0)
     # savefig("initial_weights.png")
@@ -354,7 +427,7 @@ function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, D::
         # test_weight = layer_output.weight
 
         # train the neural network using G and the new s and p_causal
-        model = fit_heritability_nn(model, q_μ, q_var, q_α, G, i) #*#
+        model = fit_heritability_nn(model, q_var, q_α, G, i) #*#
 
         trained_model = deepcopy(model)
         # visualize_weights(trained_model, i)
