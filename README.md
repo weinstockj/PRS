@@ -1,11 +1,16 @@
+[![Dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://weinstockj.github.io/PRS/dev)
+[![CI](https://github.com/weinstockj/PRS/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/weinstockj/PRS/actions/workflows/ci.yml)
+
 Steps to load this module from the root directory:
 
-1. Run julia (this code expects 1.9.0)
-2. Activate the enviroment by typing `]` and then `activate .` Then backspace to return to the Julia REPL
-3. Run `using Revise`
-4. Run `includet("scratch.jl")`
+1. Run `julia --color=yes --project=.` (this code expects 1.9.0)
+3. Run `using Revise` # while developing
+4. Run `using PRSFNN`
 
-Now the functions have been sourced. 
+Now the functions have been loaded. 
+To call an internal function, use `PRSFNN.function` 
+
+To call Julia in debugger mode, `JULIA_DEBUG=PRSFNN julia --color=yes --project =.`
 
 ## Simulating GWAS data
 
@@ -19,8 +24,14 @@ Check out the true $\beta$ distribution with:
 
 ## Train PRS
 
-`test_new = train_until_convergence(ss[1], ss[2], ss[4], ss[5], raw[6], raw[2], raw[8])`
+`test_new = train_until_convergence(ss[1], ss[2], ss[4], ss[5], raw[6])`
 
 ## Unit testing
 
-Run unit tests with `include("test/runtests.jl")`
+Run unit tests with `includet("test/runtests.jl")`
+
+## Contact
+
+Please address correspondence to:
+April Kim <aprilkim@jhu.edu> & Josh Weinstock <jweins17@jhu.edu> 
+
