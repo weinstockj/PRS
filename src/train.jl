@@ -183,7 +183,11 @@ function fit_heritability_nn(model, q_var, q_α, G, i=1; n_epochs = 250, patienc
 end
 
 function train_cavi(p_causal, σ2_β, X_sd, i_iter, coef, SE, R, D; n_elbo = 10, max_iter = 10, N = 10_000, σ2 = 1.0)
-   
+  
+    function clamp_ssr(ssr, max_value = 709.7) # slightly below the threshold
+        return min.(ssr, max_value)
+    end
+
     P = length(coef)
 
     q_μ = zeros(P)
@@ -251,6 +255,7 @@ function train_cavi(p_causal, σ2_β, X_sd, i_iter, coef, SE, R, D; n_elbo = 10,
             q_μ[k] = (view(q_var, k) ./ σ2) .* (view(Xty, k) .- sum(view(XtX, k, J) .* view(q_α, J) .* view(q_μ, J))) ## ak: eq 9; update u_k
         end
         SSR .= q_μ .^ 2 ./ q_var
+	SSR = clamp_ssr(SSR)
         q_odds .= (p_causal ./ (1 .- p_causal)) .* q_sd ./ sqrt.(σ2_β) .* exp.(SSR ./ 2.0) ## ak: eq 10; update a_k 
         q_α .= q_odds ./ (1.0 .+ q_odds)
 
