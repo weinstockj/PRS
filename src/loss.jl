@@ -40,7 +40,7 @@ rss(
 )
 ```
 """
-function rss(β::Vector, coef::Vector, SE::Vector, R::AbstractArray)
+function rss(β::Vector, coef::Vector, SE::Vector, R::AbstractArray; λ = 1e-8)
     # .000349, 23 allocations no turbo with P = 100
 
     # .01307 with P = 500
