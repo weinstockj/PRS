@@ -13,17 +13,14 @@ This function defines the command line interface for the PRSFNN package.
 """
 @main function main(summary_stats::String, LD_reference::String, annotations::String;)
 
-    #TODO: Complete definition of summary statistics, LD reference panel, and annotations
-
     # Load the summary statistics
     summary_stats = load_summary_stats(summary_stats)
     # Load the annotations
     annotations = load_annotations(annotations)
     # Subset for variants in summary statistics
     subset_annot_ss = innerjoin(annotations, summary_stats, on = [:variant], makeunique=true)
-    annotations = Matrix(subset_annot_ss[:,5:226])
-    summary_stats = subset_annot_ss[4; 227:238] ## todo: change to using colnames
-
+    subset_annotations = Matrix(select(subset_annot_ss, 5:226))
+    subset_summary_stats = select(subset_annot_ss, [4; 227:238]) ## change to using colnames
     current_LD_block_positions = subset_annot_ss[:,:position]
 
     # Load the LD reference panel
@@ -41,4 +38,5 @@ This function defines the command line interface for the PRSFNN package.
             annotations
         )
 
+    PRS_out = DataFrame(mu = PRS[1], alpha = PRS[2], var = PRS[3])
 end
