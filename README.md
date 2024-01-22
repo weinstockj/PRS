@@ -34,4 +34,3 @@ Run unit tests with `includet("test/runtests.jl")`
 
 Please address correspondence to:
 April Kim <aprilkim@jhu.edu> & Josh Weinstock <jweins17@jhu.edu> 
-

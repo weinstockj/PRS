@@ -95,4 +95,3 @@ function estimate_sufficient_statistics(X::AbstractArray, Y::Vector)
     R = cor(X)
     return coef, SE, Z, cor(X), D
 end
-

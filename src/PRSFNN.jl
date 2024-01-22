@@ -7,7 +7,7 @@ using LinearAlgebra
 using Zygote
 using Flux
 using Flux: train!
-# using Plots
+using Plots
 using Random
 using StatsBase: sample
 using HypothesisTests: ApproximateTwoSampleKSTest
@@ -40,4 +40,3 @@ export joint_lob_prob, RSS, elbo, train_until_convergence
 end
 
 end
-

@@ -30,4 +30,3 @@ function poet_cov(X::AbstractArray; K = 10, τ = 0.03, N = 500)
     return Σk + Σu
 end
 
-

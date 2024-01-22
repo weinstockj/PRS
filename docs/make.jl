@@ -12,4 +12,3 @@ deploydocs(;
     repo="github.com/weinstockj/PRS",
     devbranch = "master"
 )
-
