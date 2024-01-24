@@ -16,6 +16,8 @@ using LoggingExtras
 using Dates
 using SnoopPrecompile  
 using Comonicon
+using CSV
+using DataFrames
 
 # include in logging call, e.g., @info "$(ltime()) message"
 function ltime()
@@ -28,6 +30,8 @@ include("train.jl")
 include("simulate.jl")
 include("LD.jl")
 include("main.jl")
+include("load_ss.jl")
+include("load_annot.jl")
 
 export joint_lob_prob, RSS, elbo, train_until_convergence
 

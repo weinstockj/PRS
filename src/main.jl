@@ -49,7 +49,7 @@ end
     #ld_block_names = "/home/akim126/data-abattle4/april/hi_julia/annotations/ccre/celltypes/ld_block_names.txt"
     ld_block_names = "/home/akim126/data-abattle4/april/hi_julia/annotations/ccre/celltypes/chr22_ld_block_names.txt"
     
-    block_list = readlines("ld_block_names")
+    block_list = readlines(ld_block_names)
 
     for block in block_list
 	@info "$(ltime()) Current block: $block"
@@ -61,7 +61,8 @@ end
         current_LD_block_positions = subset_annot_ss[:,:position]
 
         LD_reference = joinpath("/home/akim126/data-abattle4/jweins17/LD_REF_PANEL/output/bcf", block, "filtered")
-        LD_reference_filtered = joinpath("data", block, "filtered_current_block")
+	LD_reference_filtered = "data/filtered_current_block"
+	# LD_reference_filtered = joinpath("data", block, "filtered_current_block")
         snpdata = SnpData(LD_reference)
         SnpArrays.filter(snpdata; des=LD_reference_filtered, f_snp = x -> x[:position] in current_LD_block_positions)
         LD_reference_filtered = LD_reference_filtered * ".bed"
