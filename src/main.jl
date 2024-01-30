@@ -12,13 +12,15 @@ This function defines the command line interface for the PRSFNN package.
 
 """
 @main function main(block::String, data_path::String, ld_panel_path::String)
-    data_path = "/annotations/ccre/celltypes"
+    # data_path: "/annotations/ccre/celltypes"
+    # ld_panel_path: "LD_REF_PANEL/.."
+
     @info "$(ltime()) Current block: $block"
     annotations, summary_stats, current_LD_block_positions = load_annot_and_summary_stats(joinpath(data_path, block, "variant_list_annotated_adult_fetal.bed"), joinpath(data_path, block, "bmi_gwas.tsv"))
 
     mkpath(joinpath("data", block))
     LD_reference_filtered = joinpath("data", block, "filtered_current_block")
-    snpdata = SnpData(joinpath("/home/akim126/data-abattle4/jweins17/LD_REF_PANEL/output/bcf", block, "filtered"))
+    snpdata = SnpData(joinpath(ld_panel_path, block, "filtered"))
     SnpArrays.filter(snpdata; des=LD_reference_filtered, f_snp = x -> x[:position] in current_LD_block_positions)
     LD_reference_filtered = LD_reference_filtered * ".bed"
     LD, D = compute_LD(LD_reference_filtered)
