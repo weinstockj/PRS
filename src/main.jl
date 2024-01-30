@@ -25,7 +25,7 @@ This function defines the command line interface for the PRSFNN package.
     LD_reference_filtered = LD_reference_filtered * ".bed"
     LD, D = compute_LD(LD_reference_filtered)
 
-    @time PRS = train_until_convergence!(
+    @time PRS = train_until_convergence(
     # PRS = train_until_convergence!(
         summary_stats.beta,
         summary_stats.se,

@@ -319,7 +319,7 @@ end
     - 'G::AbstractArray': A P x K matrix of annotations
     
 """
-function train_until_convergence!(coef::Vector, SE::Vector, R::AbstractArray, D::Vector, G::AbstractArray; max_iter = 20, threshold = 0.1, N = 10_000) # max_iter = 30, 
+function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, D::Vector, G::AbstractArray; max_iter = 20, threshold = 0.1, N = 10_000) # max_iter = 30, 
 # function train_until_convergence(coef, SE, R, D, G, true_betas, function_choices; max_iter = 20, threshold = 0.1, N = 10_000) # max_iter = 30, 
 
     ## initialize
