@@ -184,6 +184,10 @@ end
 
 function train_cavi(p_causal, σ2_β, X_sd, i_iter, coef, SE, R, D; n_elbo = 10, max_iter = 10, N = 10_000, σ2 = 1.0)
    
+    function clamp_ssr(ssr, max_value = 709.7) # slightly below the threshold
+        return min.(ssr, max_value)
+    end
+
     P = length(coef)
 
     q_μ = zeros(P)
@@ -245,14 +249,15 @@ function train_cavi(p_causal, σ2_β, X_sd, i_iter, coef, SE, R, D; n_elbo = 10,
 
         # println("q_μ, q_α, q_var, q_odds updates happening")
 
-        q_var .= σ2 ./ (diag(XtX) .+ 1 ./ σ2_β) ## ak: eq 8; \s^2_k; does not depend on alpha and mu from previous
-        @inbounds for k in 1:P
+        @time q_var .= σ2 ./ (diag(XtX) .+ 1 ./ σ2_β) ## ak: eq 8; \s^2_k; does not depend on alpha and mu from previous
+        @time @inbounds for k in 1:P
             J = setdiff(1:P, k)
             q_μ[k] = (view(q_var, k) ./ σ2) .* (view(Xty, k) .- sum(view(XtX, k, J) .* view(q_α, J) .* view(q_μ, J))) ## ak: eq 9; update u_k
         end
-        SSR .= q_μ .^ 2 ./ q_var
-        q_odds .= (p_causal ./ (1 .- p_causal)) .* q_sd ./ sqrt.(σ2_β) .* exp.(SSR ./ 2.0) ## ak: eq 10; update a_k 
-        q_α .= q_odds ./ (1.0 .+ q_odds)
+        @time SSR .= q_μ .^ 2 ./ q_var
+        @time SSR = clamp_ssr(SSR)
+	@time q_odds .= (p_causal ./ (1 .- p_causal)) .* q_sd ./ sqrt.(σ2_β) .* exp.(SSR ./ 2.0) ## ak: eq 10; update a_k 
+        @time q_α .= q_odds ./ (1.0 .+ q_odds)
 
         # println("q_μ")
         # println(q_μ[1:3])
@@ -314,7 +319,7 @@ end
     - 'G::AbstractArray': A P x K matrix of annotations
     
 """
-function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, D::Vector, G::AbstractArray; max_iter = 20, threshold = 0.1, N = 10_000) # max_iter = 30, 
+function train_until_convergence!(coef::Vector, SE::Vector, R::AbstractArray, D::Vector, G::AbstractArray; max_iter = 20, threshold = 0.1, N = 10_000) # max_iter = 30, 
 # function train_until_convergence(coef, SE, R, D, G, true_betas, function_choices; max_iter = 20, threshold = 0.1, N = 10_000) # max_iter = 30, 
 
     ## initialize
@@ -367,7 +372,7 @@ function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, D::
         # train CAVI using set slab variance and p_causal as inputs; first round
         # cavi_q_u is cavi trained estimated betas, and coef is from iteration before
         # q_μ, q_α, q_var, odds, new_loss, cavi_losses = train_cavi(cavi_q_μ, cavi_q_α, cavi_q_var, nn_p_causal, nn_σ2_β, X_sd, i, coef, SE, R, D)
-        q_μ, q_α, q_var, odds, new_loss, cavi_losses = train_cavi(
+        @time q_μ, q_α, q_var, odds, new_loss, cavi_losses = train_cavi(
             nn_p_causal, 
             nn_σ2_β, 
             X_sd, 
@@ -377,6 +382,7 @@ function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, D::
             R, 
             D
         )
+	println("### cavi train finished!")
 
         if i >= 2
             @debug "$(ltime()) difference from n, n-1 (%) = $(abs(new_loss - prev_loss) / abs(prev_loss))"

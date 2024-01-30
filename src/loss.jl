@@ -40,7 +40,7 @@ rss(
 )
 ```
 """
-function rss(β::Vector, coef::Vector, SE::Vector, R::AbstractArray)
+function rss(β::Vector, coef::Vector, SE::Vector, R::AbstractArray; λ = 1e-8)
     # .000349, 23 allocations no turbo with P = 100
 
     # .01307 with P = 500
@@ -49,11 +49,17 @@ function rss(β::Vector, coef::Vector, SE::Vector, R::AbstractArray)
     μ =  (SE .* R .* (1 ./ SE)') * β
     Σ = Hermitian(SE .* R .* SE')
     #println(Σ)
+    # there are some very small negative eigenvalues
+    # very close to zero in the covariance matrix Σ
+    # adding a small positive value to the diagonal of Σ
+    # for regularization to make the matrix positive definite
+    # Add λ to the diagonal of Σ
+    Σ_reg = Σ + λ * I
     # dist = MvNormal(μ, Σ)
-    return logpdf(MvNormal(μ, Σ), coef)
+    return logpdf(MvNormal(μ, Σ_reg), coef)
+    #return logpdf(MvNormal(μ, Σ), coef)
     #return μ, Σ
 end
-
 """
 `joint_log_prob(β, coef, SE, R, σ2_β, p_causal)`
 
