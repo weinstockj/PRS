@@ -40,23 +40,27 @@ rss(
 )
 ```
 """
-function rss(β::Vector, coef::Vector, SE::Vector, R::AbstractArray; λ = 1e-8)
+function rss(β::Vector, coef::Vector, SE::Vector, R::AbstractArray, to; λ = 1e-8)
     # .000349, 23 allocations no turbo with P = 100
 
     # .01307 with P = 500
     # S = Matrix(Diagonal(SE))
    # Sinv = Matrix(Diagonal(1 ./ SE)) # need to wrap in Matrix for ReverseDiff
-    μ =  (SE .* R .* (1 ./ SE)') * β
-    Σ = Hermitian(SE .* R .* SE')
+    μ = @timeit to "update μ within rss"  (SE .* R .* (1 ./ SE)') * β
+    Σ = @timeit to "create Σ" Hermitian(SE .* R .* SE')
     #println(Σ)
     # there are some very small negative eigenvalues
     # very close to zero in the covariance matrix Σ
     # adding a small positive value to the diagonal of Σ
     # for regularization to make the matrix positive definite
     # Add λ to the diagonal of Σ
-    Σ_reg = Σ + λ * I
+    Σ_reg = @timeit to "add ϵ to diagonal Σ" Σ + λ * I
+    # Σ_reg = @timeit to "add ϵ to diagonal Σ" Σ 
+    # Σ_reg = @timeit to "POET cov " poet_cov(Σ) 
     # dist = MvNormal(μ, Σ)
-    return logpdf(MvNormal(μ, Σ_reg), coef)
+    val = @timeit to "calculate logpdf" logpdf(MvNormal(μ, Σ_reg), coef)
+    #
+    return val
     #return logpdf(MvNormal(μ, Σ), coef)
     #return μ, Σ
 end
@@ -77,7 +81,7 @@ joint_log_prob(
 )
 ```
 """
-joint_log_prob(β, coef, SE, R, σ2_β, p_causal) = rss(β, coef, SE, R) + log_prior(β, σ2_β, p_causal)
+joint_log_prob(β, coef, SE, R, σ2_β, p_causal, to) = rss(β, coef, SE, R, to) + log_prior(β, σ2_β, p_causal)
 
 """
     elbo(z, q_μ, log_q_var, coef, SE, R, σ2_β, p_causal)
@@ -96,15 +100,15 @@ elbo(
 )
 ```
 """
-function elbo(z::Vector, q_μ::Vector, log_q_var::Vector, coef::Vector, SE::Vector, R::AbstractArray, σ2_β::Vector, p_causal::Vector)
-    q_var = exp.(log_q_var)
-    q = MvNormal(q_μ, Diagonal(I * q_var))
-    q_sd = sqrt.(q_var)
-    ϕ = q_μ .+ q_sd .* z
+function elbo(z::Vector, q_μ::Vector, log_q_var::Vector, coef::Vector, SE::Vector, R::AbstractArray, σ2_β::Vector, p_causal::Vector, to)
+    q_var = @timeit to "q_var" exp.(log_q_var)
+    q = @timeit to "q" MvNormal(q_μ, Diagonal(I * q_var))
+    q_sd = @timeit to "q_sd" sqrt.(q_var)
+    ϕ = @timeit to "ϕ" q_μ .+ q_sd .* z
     # γ = compute_γ(q_μ, q_var)   
     # jl =  joint_log_prob(γ .* ϕ, coef, SE, R) 
-    jl =  joint_log_prob(ϕ, coef, SE, R, σ2_β, p_causal) 
-    q = logpdf(q, ϕ)
+    jl =  @timeit to "joint_log_prob" joint_log_prob(ϕ, coef, SE, R, σ2_β, p_causal, to) 
+    q = @timeit to "logpd" logpdf(q, ϕ)
     # jac = prod(z)
     return (jl - q)
 end

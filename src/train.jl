@@ -198,6 +198,7 @@ function train_cavi(p_causal, σ2_β, X_sd, i_iter, coef, SE, R, D, to; n_elbo =
         q_α = ones(P) .* 0.10
         q_odds = ones(P) 
         SSR = ones(P)
+        # z = rand(Normal(0, 1), P)
 
         # X_sd = sqrt.(D ./ N)
         Xty = @timeit to "copy Xty" copy(coef .* D)
@@ -216,7 +217,8 @@ function train_cavi(p_causal, σ2_β, X_sd, i_iter, coef, SE, R, D, to; n_elbo =
             loss = 0.0
             @timeit to "elbo estimate" begin
                 @inbounds for z in 1:n_elbo
-                    loss = loss + elbo(rand(Normal(0, 1), P), q_μ, log.(q_var), coef, SE, R, σ2_β, p_causal)
+                    z = rand(Normal(0, 1), P)
+                    loss = loss + elbo(z, q_μ, log.(q_var), coef, SE, R, σ2_β, p_causal, to)
                 end
             end
          
