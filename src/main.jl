@@ -11,12 +11,15 @@ This function defines the command line interface for the PRSFNN package.
 - `annotations`: A path to an appropriately formatted annotations file
 
 """
-@main function main(block::String, data_path::String, ld_panel_path::String)
-    # data_path: "/annotations/ccre/celltypes"
-    # ld_panel_path: "LD_REF_PANEL/.."
+@main function main(block::String = "chr9_10648_902256", data_path::String = "/data/abattle4/april/hi_julia/annotations/ccre/celltypes" , ld_panel_path::String = "/data/abattle4/jweins17/LD_REF_PANEL/output/bcf")
 
+    Random.seed!(1)
+    
     @info "$(ltime()) Current block: $block"
-    annotations, summary_stats, current_LD_block_positions = load_annot_and_summary_stats(joinpath(data_path, block, "variant_list_annotated_adult_fetal.bed"), joinpath(data_path, block, "bmi_gwas.tsv"))
+    annotations, summary_stats, current_LD_block_positions = load_annot_and_summary_stats(
+                joinpath(data_path, block, "variant_list_annotated_adult_fetal.bed"), 
+                joinpath(data_path, block, "bmi_gwas.tsv")
+            )
 
     mkpath(joinpath("data", block))
     LD_reference_filtered = joinpath("data", block, "filtered_current_block")
@@ -25,8 +28,7 @@ This function defines the command line interface for the PRSFNN package.
     LD_reference_filtered = LD_reference_filtered * ".bed"
     LD, D = compute_LD(LD_reference_filtered)
 
-    @time PRS = train_until_convergence!(
-    # PRS = train_until_convergence!(
+    @time PRS = train_until_convergence(
         summary_stats.beta,
         summary_stats.se,
         LD, # correlation matrix
