@@ -12,7 +12,7 @@ function compute_LD(LD_reference::String = "test_data/test_data/chr1_16103_11703
     return R, D
 end
 
-function poet_cov(X::AbstractArray; K = 10, τ = 0.06, N = 1000)
+function poet_cov(X::AbstractArray; K = 100, τ = 0.01, N = 1000)
     #https://www.ncbi.nlm.nih.gov/pmc/articles/PMC5563862/
     Σ = Symmetric(X)
     eig = eigen(Σ, 1, K)
