@@ -208,6 +208,13 @@ function train_cavi(p_causal, σ2_β, X_sd, i_iter, coef, SE, R, D, to; n_elbo =
         prev_loss = -Inf
         prev_prev_loss = -Inf
         cavi_loss = Float32[]
+
+        SR = SE .* R
+        Σ = @timeit to "Σ" SR .* SE' 
+        λ = 1e-8
+        # Σ_reg = PDMat(Hermitian(Σ + λ * I))
+        Σ_reg = @timeit to "Σ_reg" PDMat(Hermitian(poet_cov(Σ; K = 30, τ = .01) + λ * I))
+        SRSinv = @timeit to "SRSinv" SR .* (1 ./ SE')
     end
 
     @inbounds for i in 1:max_iter
@@ -218,7 +225,9 @@ function train_cavi(p_causal, σ2_β, X_sd, i_iter, coef, SE, R, D, to; n_elbo =
             @timeit to "elbo estimate" begin
                 @inbounds for z in 1:n_elbo
                     z = rand(Normal(0, 1), P)
-                    loss = loss + elbo(z, q_μ, log.(q_var), coef, SE, R, σ2_β, p_causal, to)
+                    # loss_old = loss_old + elbo(z, q_μ, log.(q_var), coef, SE, R, σ2_β, p_causal, to)
+                    loss = loss + elbo(z, q_μ, log.(q_var), coef, Σ_reg, SRSinv, σ2_β, p_causal, to)
+                    # @info "$(ltime()) loss_new = $loss, loss_old = $loss_old"
                 end
             end
          
