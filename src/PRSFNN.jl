@@ -19,6 +19,7 @@ using Comonicon
 using CSV
 using DataFrames
 using DelimitedFiles
+using PDMats
 using TimerOutputs
 
 # include in logging call, e.g., @info "$(ltime()) message"
