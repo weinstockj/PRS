@@ -15,8 +15,8 @@ end
 function poet_cov(X::AbstractArray; K = 100, τ = 0.01, N = 1000)
     #https://www.ncbi.nlm.nih.gov/pmc/articles/PMC5563862/
     Σ = Symmetric(X)
-    eig = eigen(Σ, 1, K)
     P = size(X, 2)
+    eig = eigen(Σ, (P - K):P)
     evals = eig.values
     evecs = eig.vectors
     c = (tr(Σ) - sum(evals)) / (P - K - P * K / N)
@@ -28,5 +28,6 @@ function poet_cov(X::AbstractArray; K = 100, τ = 0.01, N = 1000)
         end
     end
     return Σk + Σu
+    # return Σk + Σu, Σk, Σu
 end
 

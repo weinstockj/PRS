@@ -212,8 +212,9 @@ function train_cavi(p_causal, σ2_β, X_sd, i_iter, coef, SE, R, D, to; n_elbo =
         SR = SE .* R
         Σ = @timeit to "Σ" SR .* SE' 
         λ = 1e-8
-        # Σ_reg = PDMat(Hermitian(Σ + λ * I))
-        Σ_reg = @timeit to "Σ_reg" PDMat(Hermitian(poet_cov(Σ; K = 30, τ = .01) + λ * I))
+        Σ_reg = @timeit to "Σ_reg" PDMat(Hermitian(poet_cov(Σ; K = floor(Int64, P / 3), τ = .02) + λ * I))
+        # Σ_reg = @timeit to "Σ_reg" PDMat(Hermitian(poet_cov(Σ; K = 50, τ = .03)))
+        # Σ_reg = @timeit to "Σ_reg" PDMat(Hermitian(Σ + λ * I))
         SRSinv = @timeit to "SRSinv" SR .* (1 ./ SE')
     end
 
