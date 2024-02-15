@@ -1,6 +1,0 @@
-Building DAG of jobs...
-MissingInputException in line 9 of /data/abattle4/april/hi_julia/debug_elbo/PRS/Snakefile:
-Missing input files for rule train_region:
-    affected files:
-        data/ld_blocks/sm_run/chr22
-        data/ld_blocks/sm_run/chr21

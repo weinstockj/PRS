@@ -1,2 +1,0 @@
-SyntaxError in line 15 of /data/abattle4/april/hi_julia/debug_elbo/PRS/Snakefile:
-expression cannot contain assignment, perhaps you meant "=="?

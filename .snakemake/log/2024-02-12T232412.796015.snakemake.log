@@ -1,4 +1,0 @@
-NameError in line 3 of /data/abattle4/april/hi_julia/debug_elbo/PRS/Snakefile:
-name 'glob' is not defined
-  File "/data/abattle4/april/hi_julia/debug_elbo/PRS/Snakefile", line 10, in <module>
-  File "/data/abattle4/april/hi_julia/debug_elbo/PRS/Snakefile", line 3, in read_regions
