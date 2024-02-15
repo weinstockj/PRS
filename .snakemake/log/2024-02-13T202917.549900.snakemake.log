@@ -1,0 +1,21 @@
+Building DAG of jobs...
+Using shell: /usr/bin/bash
+Provided cores: 2
+Rules claiming more threads will be scaled down.
+Job stats:
+job             count    min threads    max threads
+------------  -------  -------------  -------------
+train_region        1              2              2
+total               1              2              2
+
+Select jobs to execute...
+
+[Tue Feb 13 20:29:17 2024]
+rule train_region:
+    input: data/ld_blocks/sm_run/chr21.txt, data/ld_blocks/sm_run/chr22.txt
+    jobid: 0
+    threads: 2
+    resources: tmpdir=/tmp, mem=190G, partition=parallel, time=40:00:00
+
+RuleException in line 9 of /data/abattle4/april/hi_julia/debug_elbo/PRS/Snakefile:
+NameError: The name '$chunk' is unknown in this context. Please make sure that you defined that variable. Also note that braces not used for variable access have to be escaped by repeating them, i.e. {{print $1}}

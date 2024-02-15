@@ -1,0 +1,8 @@
+Building DAG of jobs...
+InputFunctionException in line 8 of /data/abattle4/april/hi_julia/debug_elbo/PRS/Snakefile:
+Error:
+  AttributeError: 'Wildcards' object has no attribute 'chrom'
+Wildcards:
+
+Traceback:
+  File "/data/abattle4/april/hi_julia/debug_elbo/PRS/Snakefile", line 10, in <lambda>

@@ -1,0 +1,3 @@
+NameError in line 3 of /data/abattle4/april/hi_julia/debug_elbo/PRS/Snakefile:
+name 'read_regions' is not defined
+  File "/data/abattle4/april/hi_julia/debug_elbo/PRS/Snakefile", line 3, in <module>

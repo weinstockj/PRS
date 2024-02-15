@@ -4,6 +4,7 @@ authors = ["April Kim <aprilkim@jhu.edu>", "Josh Weinstock <jweins17@jhu.edu>"]
 version = "1.9.4"
 
 [deps]
+BSON = "fbb218c0-5317-5bc6-957e-2ee96dd4b1f0"
 CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
 CategoricalArrays = "324d7699-5711-5eae-9e2f-1d82baa6b597"
 Clustering = "aaaa29a8-35af-508c-8bc3-b662a17a0fe5"
@@ -15,6 +16,7 @@ Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
 Flux = "587475ba-b771-5e3f-ad9e-33799f191a9c"
 HypothesisTests = "09f84164-cd44-5f33-b23f-e6b0d136a0d5"
 Interpolations = "a98d9a8b-a2ab-59e6-89dd-64a1c18fca59"
+JLD2 = "033835bb-8acc-5ee8-8aae-3f567f8a3819"
 KernelDensity = "5ab0869b-81aa-558d-bb23-cbf5423bbe9b"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 LoggingExtras = "e6f89c97-d47a-5376-807f-9c37f3926c36"

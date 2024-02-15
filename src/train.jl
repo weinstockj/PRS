@@ -45,15 +45,19 @@ end
     yhat[:, 2] .= 1.0 ./ (1.0 .+ exp.(-yhat[:, 2]))
 ```
 """
-function fit_heritability_nn(model, q_var, q_α, G, i=1; n_epochs = 250, patience=100, mse_improvement_threshold=0.01, test_ratio=0.2, num_splits=5, weight_slab=1, weight_causal=1)
+function fit_heritability_nn(model, q_var, q_α, G, i=1; n_epochs = 50, patience=10, mse_improvement_threshold=0.01, test_ratio=0.2, num_splits=5, weight_slab=1, weight_causal=1)
 
     # RMSE
     function loss(model, x, y_slab, y_causal) ## ak: need two losses for slab variance and percent causal 
         yhat = model(transpose(x))
+        #println("yhat in loss; slab, causal")
+        #println(yhat[1, 1:5], yhat[2, 1:5])
         loss_slab = Flux.mse(yhat[1, :], y_slab)
         weighted_loss_slab = weight_slab * loss_slab
         loss_causal = Flux.mse(yhat[2, :], y_causal)
         weighted_loss_causal = weight_causal * loss_causal
+	#println("loss_slab = $weighted_loss_slab")
+        #println("loss_causal = $weighted_loss_causal")
         total_loss = weighted_loss_slab + weighted_loss_causal ## ak: losses summed to form the total loss for training
         # if !isfinite(total_loss)
         #     println("loss_slab = $loss_slab")
@@ -139,18 +143,24 @@ function fit_heritability_nn(model, q_var, q_α, G, i=1; n_epochs = 250, patienc
     for epoch in 1:n_epochs
         check_no_nan(data[1])
         train!(loss, model, data, opt)
+	#println("just trained")
+        #yhat_just_trained = model(transpose(G))
+        #println("yhat just trained; slab, causal")
+        #println(yhat_just_trained[1, 1:5], yhat_just_trained[2, 1:5])
         train_loss = loss(model, best_train_data[1], log.(best_train_data[2]), logit.(best_train_data[3]))
         push!(train_losses, train_loss)
+	#println("computed train loss")
         # ak: validation loss
         test_loss = loss(model, best_test_data[1], log.(best_test_data[2]), logit.(best_test_data[3]))
-        # println("Test loss = $test_loss")
-        # println("Train loss = $train_loss")
+	#println("computed test loss")
+        #println("Test loss = $test_loss")
+        #println("Train loss = $train_loss")
         push!(test_losses, test_loss)
 
         # check for improvement in loss
         mse_improvement = (test_loss - best_loss) / test_loss
 
-        # println("MSE improvement = $mse_improvement")
+        #println("MSE improvement = $mse_improvement")
         # if improvement from prev iteration is greater than threshold
         if mse_improvement < -mse_improvement_threshold
             best_loss = test_loss
@@ -159,7 +169,11 @@ function fit_heritability_nn(model, q_var, q_α, G, i=1; n_epochs = 250, patienc
             best_model_epoch = epoch
             # and save current model as best model
             best_model = deepcopy(model)
-            # println("$(ltime()) NEW BEST MODEL at $best_model_epoch")
+	    #println("in best model")
+	    #yhat_current_best_model = best_model(transpose(G))
+	    #println("yhat current best model; slab, causal")
+            #println(yhat_current_best_model[1, 1:5], yhat_current_best_model[2, 1:5])
+            #println("$(ltime()) NEW BEST MODEL at $best_model_epoch")
         else
             count_since_best += 1
         end
@@ -175,14 +189,17 @@ function fit_heritability_nn(model, q_var, q_α, G, i=1; n_epochs = 250, patienc
     @info "$(ltime()) Best model taken from epoch $best_model_epoch."
 
     # Plotting the loss
-    # plot_nn_loss = plot_loss_vs_epochs(train_losses, test_losses, i, best_model_epoch)
-    # savefig("epoch_losses_$i.png")
-    # println("test_loss = $test_losses")
-    # println("train_loss = $train_losses")
+#    plot_nn_loss = plot_loss_vs_epochs(train_losses, test_losses, i, best_model_epoch)
+#    savefig("epoch_losses_$i.png")
+#    println("test_loss = $test_losses")
+#    println("train_loss = $train_losses")
+    #yhat_validate = best_model(transpose(G))
+    #println("current yhat_validate; slab, causal")
+    #println(yhat_validate[1, 1:5], yhat_validate[2, 1:5])
     return best_model
 end
 
-function train_cavi(p_causal, σ2_β, X_sd, i_iter, coef, SE, R, D, to; n_elbo = 10, max_iter = 10, N = 10_000, σ2 = 1.0)
+function train_cavi(p_causal, σ2_β, X_sd, i_iter, coef, SE, R, D, to; P = 1_000, n_elbo = 10, max_iter = 10, N = 10_000, σ2 = 1.0)
    
     function clamp_ssr(ssr, max_value = 709.7) # slightly below the threshold
         return min.(ssr, max_value)
@@ -212,10 +229,21 @@ function train_cavi(p_causal, σ2_β, X_sd, i_iter, coef, SE, R, D, to; n_elbo =
         SR = SE .* R
         Σ = @timeit to "Σ" SR .* SE' 
         λ = 1e-8
-        Σ_reg = @timeit to "Σ_reg" PDMat(Hermitian(poet_cov(Σ; K = floor(Int64, P / 3), τ = .02) + λ * I))
+	# if # of SNPs in LD block is less than 10K use poet_cov
+	if P < 10_000
+	    try
+            	Σ_reg = @timeit to "Σ_reg_poet_cov" PDMat(Hermitian(poet_cov(Σ; K = floor(Int64, P / 3), τ = .02) + λ * I))
+            catch e
+	        println("poet_cov error; likely PosDefException")
+		println(e)
+		println("adjust negative eigenvalues by adding λ")
+		Σ_reg = @timeit to "Σ_reg_lambda_diagonal" PDMat(Hermitian(Σ + λ * I))
+	    end
+	else
         # Σ_reg = @timeit to "Σ_reg" PDMat(Hermitian(poet_cov(Σ; K = 50, τ = .03)))
-        # Σ_reg = @timeit to "Σ_reg" PDMat(Hermitian(Σ + λ * I))
-        SRSinv = @timeit to "SRSinv" SR .* (1 ./ SE')
+            Σ_reg = @timeit to "Σ_reg_lambda_diagonal" PDMat(Hermitian(Σ + λ * I))
+        end
+	SRSinv = @timeit to "SRSinv" SR .* (1 ./ SE')
     end
 
     @inbounds for i in 1:max_iter
@@ -338,7 +366,7 @@ end
     - 'G::AbstractArray': A P x K matrix of annotations
     
 """
-function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, D::Vector, G::AbstractArray; max_iter = 20, threshold = 0.1, N = 10_000) # max_iter = 30, 
+function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, D::Vector, G::AbstractArray; model = model, max_iter = 20, threshold = 0.1, N = 10_000) # max_iter = 30, 
 
     to = TimerOutput()
     ## initialize
@@ -363,11 +391,11 @@ function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, D::
         P = size(G, 1)
         H = 5 #3 #10
 
-        layer_1 = Dense(K => H, relu; init = Flux.glorot_normal(gain = 0.0005))
-        layer_output = Dense(H => 2)
-        model = Chain(
-            layer_1, layer_output
-        )
+        #layer_1 = Dense(K => H, relu; init = Flux.glorot_normal(gain = 0.0005))
+        #layer_output = Dense(H => 2)
+        #model = Chain(
+        #    layer_1, layer_output
+        #)
     end
 
     # max_activations = find_max_activation(layer_1, K)
@@ -404,7 +432,8 @@ function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, D::
                 SE, 
                 R, 
                 D,
-                to # the timer function
+                to, # the timer function
+		P=P
             )
             @info "$(ltime()) Training CAVI finished"
         end
@@ -463,17 +492,17 @@ function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, D::
             trained_model = deepcopy(model)
         end
         outputs = trained_model(transpose(G))
-        # println("VARIANCE B AFTER NN")
+        println("VARIANCE B AFTER NN")
         nn_σ2_β = exp.(outputs[1, :]) 
         @debug "$(ltime()) sum(nn_σ2_β) = $(sum(nn_σ2_β))"
         nn_σ2_β = nn_σ2_β .* 1.0 ./ sum(nn_σ2_β)
-        # println(nn_σ2_β[1:3])
+        println(nn_σ2_β[1:3])
         nn_p_causal = 1 ./ (1 .+ exp.(-outputs[2, :])) ## ak: logistic to recover orig prob
 
         @debug "$(ltime()) mean nn_p_causal = $(mean(nn_p_causal))"
         nn_p_causal = nn_p_causal .* L ./ sum(nn_p_causal)
-        # println("new p_causal after training")
-        # println(nn_p_causal[1:3])
+        println("new p_causal after training")
+        println(nn_p_causal[1:3])
 
 
         @timeit to "deepcopys" begin

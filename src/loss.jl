@@ -40,6 +40,7 @@ rss(
 )
 ```
 """
+#=
 function rss(β::Vector, coef::Vector, SE::Vector, R::AbstractArray, to; λ = 1e-8)
     # .000349, 23 allocations no turbo with P = 100
 
@@ -64,6 +65,7 @@ function rss(β::Vector, coef::Vector, SE::Vector, R::AbstractArray, to; λ = 1e
     #return logpdf(MvNormal(μ, Σ), coef)
     #return μ, Σ
 end
+=#
 
 function rss(β::Vector, coef::Vector, Σ::AbstractPDMat, SRSinv::Matrix, to; λ = 1e-8)
     # .000349, 23 allocations no turbo with P = 100

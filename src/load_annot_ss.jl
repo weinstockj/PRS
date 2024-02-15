@@ -1,4 +1,4 @@
-function load_annot_and_summary_stats(annot::String, ss::String)
+function load_annot_and_summary_stats(annot::String, ss::String; ss_type = neale)
 
     function extract_chr_pos(variant_str)
         split_parts = split(variant_str, "_")
@@ -11,15 +11,35 @@ function load_annot_and_summary_stats(annot::String, ss::String)
     rename!(annot,:snp_id => :variant)
 
     ss = CSV.read(ss, DataFrame)
-    ss = select(ss, [:variant, :minor_AF, :low_confidence_variant, :beta, :se, :pval])
+    # ss = select(ss, [:variant, :minor_AF, :low_confidence_variant, :n_complete_samples, :beta, :se, :pval])
+    ss = select(ss, [:variant, :minor_AF, :n_complete_samples, :beta, :se, :pval])
+    delete!(ss, findall(nonunique(select(ss, [:variant]))))
+    if ss_type == "locke"
+        ss = subset(ss, :beta => ByRow(!=("NA")))
+        ss = subset(ss, :minor_AF => ByRow(!=("NA")))
+        ss = subset(ss, :se => ByRow(!=("NA")))
+        ss = subset(ss, :n_complete_samples => ByRow(!=("NA")))
+        if typeof(ss.minor_AF) != Vector{Float64}
+            transform!(ss, :minor_AF => ByRow(x -> parse(Float64, x)) => :minor_AF)
+        end
+        #if typeof(ss.n_complete_samples) != Vector{Float64}
+        #    transform!(ss, :n_complete_samples => ByRow(x -> parse(Float64, x)) => :n_complete_samples)
+        #end
+    end
     ss[!, :chromosome], ss[!, :position] = unzip(extract_chr_pos.(ss[:, :variant]))
     # ss[!, :z] = ss[:, :beta] ./ ss[:, :se]
-    ss = filter(row -> !row[:low_confidence_variant], ss)
+    if ss_type == "neale"
+        ss = filter(row -> !row[:low_confidence_variant], ss)
+    end
     ss = subset(ss, :minor_AF => ByRow(>=(0.01)))
 
     subset_annot_ss = innerjoin(annot, ss, on = [:variant], makeunique=true)
     annot = Matrix(select(subset_annot_ss, 5:226))
-    ss = select(subset_annot_ss, [:variant, :minor_AF, :low_confidence_variant, :beta, :se, :pval])
+    if ss_type == "locke"
+        ss = select(subset_annot_ss, [:variant, :minor_AF, :n_complete_samples, :beta, :se, :pval])
+    else
+	ss = select(subset_annot_ss, [:variant, :minor_AF, :low_confidence_variant, :n_complete_samples, :beta, :se, :pval])
+    end
     current_LD_block_positions = subset_annot_ss[:,:position]
 
     return annot, ss, current_LD_block_positions
