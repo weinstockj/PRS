@@ -188,14 +188,6 @@ function fit_heritability_nn(model, q_var, q_α, G, i=1; n_epochs = 50, patience
 
     @info "$(ltime()) Best model taken from epoch $best_model_epoch."
 
-    # Plotting the loss
-#    plot_nn_loss = plot_loss_vs_epochs(train_losses, test_losses, i, best_model_epoch)
-#    savefig("epoch_losses_$i.png")
-#    println("test_loss = $test_losses")
-#    println("train_loss = $train_losses")
-    #yhat_validate = best_model(transpose(G))
-    #println("current yhat_validate; slab, causal")
-    #println(yhat_validate[1, 1:5], yhat_validate[2, 1:5])
     return best_model
 end
 
@@ -215,9 +207,7 @@ function train_cavi(p_causal, σ2_β, X_sd, i_iter, coef, SE, R, D, to; P = 1_00
         q_α = ones(P) .* 0.10
         q_odds = ones(P) 
         SSR = ones(P)
-        # z = rand(Normal(0, 1), P)
 
-        # X_sd = sqrt.(D ./ N)
         Xty = @timeit to "copy Xty" copy(coef .* D)
         XtX = @timeit to "Create XtX" Diagonal(X_sd) * R * Diagonal(X_sd) .* N
 
@@ -230,19 +220,20 @@ function train_cavi(p_causal, σ2_β, X_sd, i_iter, coef, SE, R, D, to; P = 1_00
         Σ = @timeit to "Σ" SR .* SE' 
         λ = 1e-8
 	# if # of SNPs in LD block is less than 10K use poet_cov
-	if P < 10_000
-	    try
-            	Σ_reg = @timeit to "Σ_reg_poet_cov" PDMat(Hermitian(poet_cov(Σ; K = floor(Int64, P / 3), τ = .02) + λ * I))
-            catch e
-	        println("poet_cov error; likely PosDefException")
-		println(e)
-		println("adjust negative eigenvalues by adding λ")
-		Σ_reg = @timeit to "Σ_reg_lambda_diagonal" PDMat(Hermitian(Σ + λ * I))
-	    end
-	else
-        # Σ_reg = @timeit to "Σ_reg" PDMat(Hermitian(poet_cov(Σ; K = 50, τ = .03)))
-            Σ_reg = @timeit to "Σ_reg_lambda_diagonal" PDMat(Hermitian(Σ + λ * I))
-        end
+	# if P < 10_000
+	#     try
+            	# Σ_reg = @timeit to "Σ_reg_poet_cov" PDMat(Hermitian(poet_cov(Σ; K = floor(Int64, P / 3), τ = .02, N = N) + λ * I))
+            # catch e
+                # @info "$(ltime()) poet_cov error; likely PosDefException"
+	# 	println(e)
+                # @info "$(ltime()) adjust negative eigenvalues by adding λ"
+	# 	Σ_reg = @timeit to "Σ_reg_lambda_diagonal" PDMat(Hermitian(Σ + λ * I))
+	#     end
+            # else
+        # # Σ_reg = @timeit to "Σ_reg" PDMat(Hermitian(poet_cov(Σ; K = 50, τ = .03)))
+            # Σ_reg = @timeit to "Σ_reg_lambda_diagonal" PDMat(Hermitian(Σ + λ * I))
+        # end
+        Σ_reg = @timeit to "Σ_reg_lambda_diagonal" PDMat(Hermitian(Σ + λ * I))
 	SRSinv = @timeit to "SRSinv" SR .* (1 ./ SE')
     end
 
@@ -346,9 +337,6 @@ function find_max_activation(layer, K)
 
     # extract activation values of the neuron for each input pattern
     activations = [layer(input) for input in dummy_inputs]
-    # println("ACTIVATIONS")
-    # println(activations)
-
     # Identify the input pattern that resulted in the maximum activation
     max_activations = [argmax(vec(activation)) for activation in activations]
 
@@ -366,7 +354,7 @@ end
     - 'G::AbstractArray': A P x K matrix of annotations
     
 """
-function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, D::Vector, G::AbstractArray; model = model, max_iter = 20, threshold = 0.1, N = 10_000) # max_iter = 30, 
+function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, D::Vector, G::AbstractArray; model = model, max_iter = 20, threshold = 0.1, N = 10_000) 
 
     to = TimerOutput()
     ## initialize
@@ -389,24 +377,8 @@ function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, D::
 
         K = size(G, 2)
         P = size(G, 1)
-        H = 5 #3 #10
 
-        #layer_1 = Dense(K => H, relu; init = Flux.glorot_normal(gain = 0.0005))
-        #layer_output = Dense(H => 2)
-        #model = Chain(
-        #    layer_1, layer_output
-        #)
     end
-
-    # max_activations = find_max_activation(layer_1, K)
-    # println("FIND MAX ACTIVATION")
-    # println(max_activations)
-
-    # annotations_initial = string.("annot", collect(1:K))
-    # annotations_layer1 = string.("annot", collect(1:H))
-
-    # visualize_weights(model, 0)
-    # savefig("initial_weights.png")
 
     prev_loss = -Inf
     model_init = deepcopy(model)
@@ -433,7 +405,8 @@ function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, D::
                 R, 
                 D,
                 to, # the timer function
-		P=P
+		P = P,
+                N = N
             )
             @info "$(ltime()) Training CAVI finished"
         end
@@ -459,9 +432,6 @@ function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, D::
         cavi_q_var = copy(q_var)
 
         max_abs_post_effect = abs(maximum(cavi_q_μ .* cavi_q_α))
-        # corr_with_true = cor(cavi_q_μ .* cavi_q_α, true_betas)
-        # println("corr_with_true")
-        # println(corr_with_true)
 
         # compute new marginal variance from q_α and q_var
         marg_var =  cavi_q_α .* cavi_q_var #q_α .* q_var
@@ -469,39 +439,20 @@ function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, D::
             error("q_var or marginal_var has neg value")
         end
 
-        # println("q_μ")
-        # println(cavi_q_μ[1:3])
-
-        # println("MARGINAL VARIANCE")
-        # println(marg_var[1:3])
-
-        # println("conditional VARIANCE")
-        # println(cavi_q_var[1:3])
-        # marg_var = marg_var ./ mean(marg_var)
-
-        # println("Q_ALPHA")
-        # println(cavi_q_α[1:3])
-
-        # println("printing weights before nn")
-        # @show layer_output.weight
-        # test_weight = layer_output.weight
-
         # train the neural network using G and the new s and p_causal
         @timeit to "fit_heritability_nn" begin
             model = fit_heritability_nn(model, q_var, q_α, G, i) #*#
             trained_model = deepcopy(model)
         end
         outputs = trained_model(transpose(G))
-        println("VARIANCE B AFTER NN")
         nn_σ2_β = exp.(outputs[1, :]) 
         @debug "$(ltime()) sum(nn_σ2_β) = $(sum(nn_σ2_β))"
         nn_σ2_β = nn_σ2_β .* 1.0 ./ sum(nn_σ2_β)
-        println(nn_σ2_β[1:3])
         nn_p_causal = 1 ./ (1 .+ exp.(-outputs[2, :])) ## ak: logistic to recover orig prob
 
         @debug "$(ltime()) mean nn_p_causal = $(mean(nn_p_causal))"
         nn_p_causal = nn_p_causal .* L ./ sum(nn_p_causal)
-        println("new p_causal after training")
+        @debug "$(ltime()) new p_causal after training"
         println(nn_p_causal[1:3])
 
 
@@ -513,70 +464,6 @@ function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, D::
         end
     end
     
-    # plot_max_effect = plot_max_effect_size_vs_iteration(posterior_effect_sizes)
-    # savefig("plot_max_effect.png")
-    # display(plot_max_effect)
-    # println("corr with true effects")
-    # println(corr_true_estimated)
-    # plot_corr = plot_corr_true_estimated(corr_true_estimated)
-    # savefig("plot_corr.png")
-    # display(plot_corr)
-    # println(posterior_effect_sizes)
-    # @debug "cavi losses"
-    # @debug combined_cavi_losses
-
-    # final_layer1_weights = prev_prev_model.layers[1].weight
-    # # final_layer1_weights = model.layers[1].weight
-    # importance_scores = sum(abs.(final_layer1_weights), dims=1)
-    # importance_scores_squared = sum(abs2.(final_layer1_weights), dims=1)
-    # plot(heatmap(reshape(function_choices, (1,100)), c=palette(:Blues_3,3), size=(690,50), legend=:left),
-    # bar(1:length(vec(importance_scores)), vec(importance_scores), ylabel="abs(weight)", legend=false),
-    # bar(1:length(vec(importance_scores_squared)), vec(importance_scores_squared), ylabel="abs2(weight)", legend=false, c=:green),
-    # layout=(3,1), size=(700,600))
-    # xlabel!("annotations")
-    # savefig("learned_weights_score.png")
-
-    # function cavi_prior(beta, max_int)
-    #     return cavi_q_α[max_int] * pdf(Normal(0, sqrt(cavi_q_var[max_int])), beta)
-    # end
-
-    # function cavi_prior_same_snp(beta, max_int)
-    #     return cavi_q_α[max_int] * pdf(Normal(0, sqrt(cavi_q_var[max_int])), beta)
-    # end
-
-    # function original_prior(beta, pi)
-    #     # ak: update later for no hardcoded values
-    #     sigma_spike = sqrt(0.001)
-    #     sigma_slab = sqrt(0.10 / 89)
-    
-    #     return pi * pdf(Normal(0, sigma_slab), beta) + (1 - pi) * pdf(Normal(0, sigma_spike), beta)
-    # end
-
-    # beta_grid = range(-0.1, stop=0.1, length=20)
-
-    # max_α = findmax(cavi_q_α)[2]
-    # # ak: update later for no hardcoded values
-    # Z = [original_prior(b1, 0.089) * cavi_prior(b2, max_α) for b1 in beta_grid, b2 in beta_grid]
-
-    # contour(beta_grid, beta_grid, Z, xlabel="Prior density, no training", ylabel="Prior density, NN training", color=:rust)
-    # plot!(beta_grid, beta_grid, label="x=y")
-    # plot!(size=(700,600))
-    # savefig("prior_density_at_max_q_alpha.png")
-
-    # Z_same = [original_prior(b1, 0.089) * cavi_prior(b2, 517) for b1 in beta_grid, b2 in beta_grid]
-
-
-    # contour(beta_grid, beta_grid, Z, xlabel="Prior density, no training", ylabel="Prior density, NN training", color=:rust)
-    # plot!(beta_grid, beta_grid, label="x=y")
-    # plot!(size=(700,600))
-    # savefig("varying_G_density.png")
-
-    # contour(beta_grid, beta_grid, Z_same, xlabel="Prior density, no training", ylabel="Prior density, NN training", color=:rust)
-    # plot!(beta_grid, beta_grid, label="x=y")
-    # plot!(size=(700,600))
-    # savefig("varying_G_density_same.png")
-
-    # return cavi_q_μ, cavi_q_α, cavi_q_var, prev_prev_model, model_init #model
     show(to)
-    return cavi_q_μ, cavi_q_α, cavi_q_var, prev_model, model_init #model
+    return cavi_q_μ, cavi_q_α, cavi_q_var, prev_model
 end
