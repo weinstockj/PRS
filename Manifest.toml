@@ -2,7 +2,7 @@
 
 julia_version = "1.9.4"
 manifest_format = "2.0"
-project_hash = "6bb927f88829f4d0065dc26e8938e9fef9d40461"
+project_hash = "00eeb7b02d9ef6a362016815bb32f76e539cc65a"
 
 [[deps.ANSIColoredPrinters]]
 git-tree-sha1 = "574baf8110975760d391c710b6341da1afa48d8c"
@@ -1623,9 +1623,9 @@ version = "0.4.1"
 
 [[deps.PackageCompiler]]
 deps = ["Artifacts", "Glob", "LazyArtifacts", "Libdl", "Pkg", "Printf", "RelocatableFolders", "TOML", "UUIDs", "p7zip_jll"]
-git-tree-sha1 = "8b880733c61c4a99a069302390de2d057ee166ce"
+git-tree-sha1 = "48d4429862157ad5500c4f61444db1b8c32e0a2b"
 uuid = "9b87118b-4619-50d2-8e1e-99f35a4d4d9d"
-version = "2.1.16"
+version = "2.1.17"
 
 [[deps.Packing]]
 deps = ["GeometryBasics"]
