@@ -15,8 +15,8 @@ This function defines the command line interface for the PRSFNN package.
             annot_data_path::String = "/data/abattle4/april/hi_julia/annotations/ccre/celltypes", 
             ld_panel_path::String = "/data/abattle4/jweins17/LD_REF_PANEL/output/bcf",
 	    gwas_file_name::String = "bmi_gwas.tsv",
-	    model_file::String = "trained_model_locke_feb14.bson",
-            output_file::String = "prs_out_locke_feb14.tsv"; min_MAF = 0.01, H = 5)
+	    model_file::String = "trained_model.bson",
+            output_file::String = "PSRFNN_out.tsv"; min_MAF = 0.01, H = 5)
 
     @info "$(ltime()) Current block: $block"
     current_chr = split(block, "_")[1]
@@ -57,7 +57,7 @@ This function defines the command line interface for the PRSFNN package.
         N=summary_stats.n_complete_samples
     )
 
-    open(joinpath("data", block, output_file), "w") do io
+    open(output_file, "w") do io
         write(io, "variant\tmu\talpha\tvar\tss_beta\n")
         writedlm(io, [summary_stats.variant PRS[1] PRS[2] PRS[3] summary_stats.beta], "\t")
     end
