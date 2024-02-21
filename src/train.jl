@@ -45,7 +45,7 @@ end
     yhat[:, 2] .= 1.0 ./ (1.0 .+ exp.(-yhat[:, 2]))
 ```
 """
-function fit_heritability_nn(model, q_var, q_α, G, i=1; n_epochs = 50, patience=10, mse_improvement_threshold=0.01, test_ratio=0.2, num_splits=5, weight_slab=1, weight_causal=1)
+function fit_heritability_nn(model, q_var, q_α, G, i=1; max_epochs = 50, patience=30, mse_improvement_threshold=0.01, test_ratio=0.2, num_splits=5, weight_slab=1, weight_causal=1)
 
     # RMSE
     function loss(model, x, y_slab, y_causal) ## ak: need two losses for slab variance and percent causal 
@@ -76,13 +76,6 @@ function fit_heritability_nn(model, q_var, q_α, G, i=1; n_epochs = 50, patience
 
     function logit(x)
         x = clamp(x)   
-        # for i in eachindex(x)
-        #     println("x[i] = $(x[i])")
-        #     if !isfinite(log(x[i] ./ (1 .- x[i])))
-        #         error("x[i] = $(x[i])")
-        #     end
-        # end
-
         return log.(x ./ (1 .- x))
     end
     # G_standardized = standardize(G)
@@ -140,7 +133,7 @@ function fit_heritability_nn(model, q_var, q_α, G, i=1; n_epochs = 50, patience
     train_losses = Float64[]
     test_losses = Float64[]
 
-    for epoch in 1:n_epochs
+    for epoch in 1:max_epochs
         check_no_nan(data[1])
         train!(loss, model, data, opt)
 	#println("just trained")
