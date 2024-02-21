@@ -354,7 +354,7 @@ end
     - 'G::AbstractArray': A P x K matrix of annotations
     
 """
-function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, D::Vector, G::AbstractArray; model = model, max_iter = 20, threshold = 0.1, N = 10_000) 
+function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, D::Vector, G::AbstractArray; model = model, max_iter = 20, threshold = 0.1, train_nn = true, N = 10_000) 
 
     to = TimerOutput()
     ## initialize
@@ -362,7 +362,7 @@ function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, D::
         @info "$(ltime()) Initializing..."
         P = length(coef)
         q_μ = zeros(P)
-        q_α = ones(P) .* 0.10
+        q_α = ones(P) .* 0.01
         L = sum(q_α)
         q_var = ones(P) * 0.001
 
@@ -372,8 +372,14 @@ function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, D::
 
         X_sd = sqrt.(D ./ N)
 
-        nn_p_causal = 0.01 * ones(P)
-        nn_σ2_β = 0.0001 * ones(P)
+        if train_nn 
+            nn_p_causal = 0.01 * ones(P)
+            nn_σ2_β = 0.001 * ones(P)
+        else
+            @info "$(ltime()) Resetting max_iter from $max_iter to 1 because the nn is frozen"
+            nn_σ2_β, nn_p_causal = predict_with_nn(model, G)
+            max_iter = 1
+        end
 
         K = size(G, 2)
         P = size(G, 1)
@@ -411,6 +417,10 @@ function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, D::
             @info "$(ltime()) Training CAVI finished"
         end
 
+        @timeit to "GC" begin
+            GC.gc()
+        end
+
         if i >= 2
             @debug "$(ltime()) difference from n, n-1 (%) = $(abs(new_loss - prev_loss) / abs(prev_loss))"
         end
@@ -439,31 +449,38 @@ function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, D::
             error("q_var or marginal_var has neg value")
         end
 
-        # train the neural network using G and the new s and p_causal
-        @timeit to "fit_heritability_nn" begin
-            model = fit_heritability_nn(model, q_var, q_α, G, i) #*#
-            trained_model = deepcopy(model)
-        end
-        outputs = trained_model(transpose(G))
-        nn_σ2_β = exp.(outputs[1, :]) 
-        @debug "$(ltime()) sum(nn_σ2_β) = $(sum(nn_σ2_β))"
-        nn_σ2_β = nn_σ2_β .* 1.0 ./ sum(nn_σ2_β)
-        nn_p_causal = 1 ./ (1 .+ exp.(-outputs[2, :])) ## ak: logistic to recover orig prob
+        if train_nn 
+            # train the neural network using G and the new s and p_causal
+            @timeit to "fit_heritability_nn" begin
+                model = fit_heritability_nn(model, q_var, q_α, G, i) #*#
+                trained_model = deepcopy(model)
+            end
 
-        @debug "$(ltime()) mean nn_p_causal = $(mean(nn_p_causal))"
-        nn_p_causal = nn_p_causal .* L ./ sum(nn_p_causal)
-        @debug "$(ltime()) new p_causal after training"
-        println(nn_p_causal[1:3])
+            nn_σ2_β, nn_p_causal = predict_with_nn(trained_model, G)
+            @debug "$(ltime()) mean nn_p_causal = $(mean(nn_p_causal))"
+            nn_p_causal = nn_p_causal .* L ./ sum(nn_p_causal)
 
-
-        @timeit to "deepcopys" begin
-            push!(posterior_effect_sizes, max_abs_post_effect)
-            push!(combined_cavi_losses, cavi_losses)
-            prev_prev_model = deepcopy(prev_model) #at iter 1, initialized model
-            prev_model = deepcopy(model) #at iter 1, trained nn model
+            @timeit to "deepcopys" begin
+                push!(posterior_effect_sizes, max_abs_post_effect)
+                push!(combined_cavi_losses, cavi_losses)
+                prev_prev_model = deepcopy(prev_model) #at iter 1, initialized model
+                prev_model = deepcopy(model) #at iter 1, trained nn model
+            end
         end
     end
     
     show(to)
-    return cavi_q_μ, cavi_q_α, cavi_q_var, prev_model
+
+    if train_nn
+        return cavi_q_μ, cavi_q_α, cavi_q_var, prev_model
+    else
+        return cavi_q_μ, cavi_q_α, cavi_q_var, model
+    end
+end
+
+function predict_with_nn(model, G)
+    outputs = model(transpose(G))
+    nn_σ2_β = exp.(outputs[1, :]) 
+    nn_p_causal = 1 ./ (1 .+ exp.(-outputs[2, :])) ## ak: logistic to recover orig prob
+    return nn_σ2_β, nn_p_causal
 end

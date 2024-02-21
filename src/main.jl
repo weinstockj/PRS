@@ -16,7 +16,7 @@ This function defines the command line interface for the PRSFNN package.
             ld_panel_path::String = "/data/abattle4/jweins17/LD_REF_PANEL/output/bcf",
 	    gwas_file_name::String = "bmi_gwas.tsv",
 	    model_file::String = "trained_model.bson",
-            output_file::String = "PSRFNN_out.tsv"; min_MAF = 0.01, H = 5)
+            output_file::String = "PSRFNN_out.tsv"; min_MAF = 0.01, train_nn = true, H = 5)
 
     @info "$(ltime()) Current block: $block"
     current_chr = split(block, "_")[1]
@@ -47,14 +47,15 @@ This function defines the command line interface for the PRSFNN package.
     LD_reference_filtered = LD_reference_filtered * ".bed"
     LD, D = compute_LD(LD_reference_filtered)
 
-    @time PRS = train_until_convergence(
+    PRS = train_until_convergence(
         summary_stats.beta,
         summary_stats.se,
         LD, # correlation matrix
         D,
         annotations,
-        model=model,
-        N=summary_stats.n_complete_samples
+        model = model,
+        N = summary_stats.n_complete_samples,
+        train_nn = train_nn
     )
 
     open(output_file, "w") do io
@@ -62,7 +63,9 @@ This function defines the command line interface for the PRSFNN package.
         writedlm(io, [summary_stats.variant PRS[1] PRS[2] PRS[3] summary_stats.beta], "\t")
     end
 
-    model = PRS[4]
-    @save model_file model
+    if train_nn
+        model = PRS[4]
+        @save model_file model
+    end
 end
 
