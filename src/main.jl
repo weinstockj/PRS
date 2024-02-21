@@ -58,7 +58,7 @@ This function defines the command line interface for the PRSFNN package.
         train_nn = train_nn
     )
 
-    open(output_file, "w") do io
+    open(betas_output_file, "w") do io
         write(io, "variant\tmu\talpha\tvar\tss_beta\n")
         writedlm(io, [summary_stats.variant PRS[1] PRS[2] PRS[3] summary_stats.beta], "\t")
     end
@@ -73,7 +73,7 @@ This function defines the command line interface for the PRSFNN package.
         model_file, 
         annot_data_path, 
         gwas_file_name, 
-        joinpath("data", block, "cell_type_effect_estimates.tsv");
+        interpretation_output_file;
         min_MAF = min_MAF
     )
 end
