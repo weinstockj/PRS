@@ -16,7 +16,7 @@ This function defines the command line interface for the PRSFNN package.
             ld_panel_path::String = "/data/abattle4/jweins17/LD_REF_PANEL/output/bcf",
 	    gwas_file_name::String = "bmi_gwas.tsv",
 	    model_file::String = "trained_model.bson",
-            betas_output_file::String = "PSRFNN_out.tsv", interpretation_output_file::String = "nn_interpretation.tsv"; min_MAF = 0.01, train_nn = true, H = 5)
+            betas_output_file::String = "PSRFNN_out.tsv", interpretation_output_file::String = "nn_interpretation.tsv"; min_MAF = 0.01, train_nn = true, H = 5, max_iter = 2)
 
     @info "$(ltime()) Current block: $block"
     current_chr = split(block, "_")[1]
@@ -55,7 +55,8 @@ This function defines the command line interface for the PRSFNN package.
         annotations,
         model = model,
         N = summary_stats.n_complete_samples,
-        train_nn = train_nn
+        train_nn = train_nn,
+        max_iter = 2
     )
 
     open(betas_output_file, "w") do io
