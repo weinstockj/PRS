@@ -184,7 +184,7 @@ function fit_heritability_nn(model, q_var, q_α, G, i=1; max_epochs = 50, patien
     return best_model
 end
 
-function train_cavi(p_causal, σ2_β, X_sd, i_iter, coef, SE, R, D, to; P = 1_000, n_elbo = 10, max_iter = 10, N = 10_000, σ2 = 1.0)
+function train_cavi(p_causal, σ2_β, X_sd, i_iter, coef, SE, R, D, to; P = 1_000, n_elbo = 10, max_iter = 2, N = 10_000, σ2 = 1.0)
    
     function clamp_ssr(ssr, max_value = 709.7) # slightly below the threshold
         return min.(ssr, max_value)
