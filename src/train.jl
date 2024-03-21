@@ -213,6 +213,7 @@ function train_cavi(p_causal, σ2_β, X_sd, i_iter, coef, SE, R, D, to; P=1_000,
         loss = -Inf
         prev_loss = -Inf
         prev_prev_loss = -Inf
+	best_loss = -Inf
         cavi_loss = Float32[]
 
         SR = SE .* R
@@ -274,7 +275,7 @@ function train_cavi(p_causal, σ2_β, X_sd, i_iter, coef, SE, R, D, to; P=1_000,
         q_var_best = copy(q_var)
         q_α_best = copy(q_α)
         q_odds_best = copy(q_odds)
-        best_lost = copy(loss)
+        best_loss = copy(loss)
 
         @info "$(ltime()) CAVI updates at iteration $i"
         @timeit to "update q_var" q_var .= σ2 ./ (diag(XtX) .+ 1 ./ σ2_β) ## ak: eq 8; \s^2_k; does not depend on alpha and mu from previous
@@ -294,6 +295,7 @@ function train_cavi(p_causal, σ2_β, X_sd, i_iter, coef, SE, R, D, to; P=1_000,
     @info "$(ltime()) CAVI updates finished"
 
     @info "$(ltime()) q_μ best returned  $(q_μ_best[1:2])"
+    @info "$(ltime()) best loss returned $best_loss"
 
     # with probability q_alpha, additive effect beta is normal with mean q_mu and variance q_var
     # return q_μ, q_α, q_var, q_odds, loss, cavi_loss
