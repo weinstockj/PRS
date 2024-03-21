@@ -192,6 +192,7 @@ function train_cavi(p_causal, σ2_β, X_sd, i_iter, coef, SE, R, D, to; P=1_000,
 
     @timeit to "initialize" begin
         @info "$(ltime()) Initializing CAVI..."
+        cavi_iter = 0
         P = length(coef)
 
         q_μ = zeros(P)
@@ -202,7 +203,7 @@ function train_cavi(p_causal, σ2_β, X_sd, i_iter, coef, SE, R, D, to; P=1_000,
         SSR = ones(P)
 
         q_μ_best = copy(q_μ)
-        q_var_best = copy(q_var) 
+        q_var_best = copy(q_var)
         q_α_best = copy(q_α)
         q_odds_best = copy(q_odds)
 
@@ -222,9 +223,60 @@ function train_cavi(p_causal, σ2_β, X_sd, i_iter, coef, SE, R, D, to; P=1_000,
     end
 
     @inbounds for i in 1:max_iter
-	@info "$(ltime()) CAVI updates at iteration $i"
-        #println("q_μ, q_α, q_var, q_odds updates happening")
 
+        @info "$(ltime()) q_μ estimates at iteration $i $(q_μ[1:2])"
+
+        # monitor loss convergence
+        loss = 0.0
+        @timeit to "elbo estimate" begin
+            @inbounds for z in 1:n_elbo
+                z = rand(Normal(0, 1), P)
+                # loss_old = loss_old + elbo(z, q_μ, log.(q_var), coef, SE, R, σ2_β, p_causal, to)
+                loss = loss + elbo(z, q_μ, log.(q_var), coef, Σ_reg, SRSinv, σ2_β, p_causal, to)
+                # @info "$(ltime()) loss_new = $loss, loss_old = $loss_old"
+            end
+        end
+
+        loss = loss / n_elbo
+
+        if isnan(loss) == true
+            error("NaN loss detected.")
+            break
+        end
+
+        @info "$(ltime()) iteration $i, loss = $(round(loss; digits = 2)) (bigger numbers are better)"
+        # ak: stopping criterion for oscillation
+        if (prev_loss > prev_prev_loss && loss < prev_loss) ||
+           (prev_loss < prev_prev_loss && loss > prev_loss)
+            # ak: we want to keep q_μ, q_α, q_var, q_odds from i-1 iteration
+            @info "$(ltime()) Oscillation detected. Stopping at iteration $i."
+            cavi_iter = i
+            break
+        end
+
+        # ak: stopping criterion for insufficient improvement (10%)
+        # ak: added a small constant to avoid division by zero
+        relative_improvement = abs(loss - prev_loss) / (abs(prev_loss) + 1e-8)
+        if relative_improvement < 0.01
+            # ak: we want to keep q_μ, q_α, q_var, q_odds from i-1 iteration
+            @info "$(ltime()) Insufficient improvement. Stopping at iteration $i."
+            cavi_iter = i
+            break
+        end
+
+        @timeit to "push cavi loss" push!(cavi_loss, Float32(loss))
+
+        # ak: update the previous losses for the next iteration
+        prev_prev_loss = prev_loss
+        prev_loss = loss
+
+        q_μ_best = copy(q_μ)
+        q_var_best = copy(q_var)
+        q_α_best = copy(q_α)
+        q_odds_best = copy(q_odds)
+        best_lost = copy(loss)
+
+        @info "$(ltime()) CAVI updates at iteration $i"
         @timeit to "update q_var" q_var .= σ2 ./ (diag(XtX) .+ 1 ./ σ2_β) ## ak: eq 8; \s^2_k; does not depend on alpha and mu from previous
         @timeit to "update q_μ" begin
             @inbounds for k in 1:P
@@ -237,71 +289,15 @@ function train_cavi(p_causal, σ2_β, X_sd, i_iter, coef, SE, R, D, to; P=1_000,
         @timeit to "update q_odds" q_odds .= (p_causal ./ (1 .- p_causal)) .* q_sd ./ sqrt.(σ2_β) .* exp.(SSR ./ 2.0) ## ak: eq 10; update a_k 
         @timeit to "update q_α" q_α .= q_odds ./ (1.0 .+ q_odds)
 
-	@info "$(ltime()) q_μ estimates after update iteration $i $(q_μ[1:2])"
-        #println("q_μ")
-        #println(q_μ[1:3])
-
-        # if clause just to monitor loss convergence
-        if (mod(i, 1) == 0) | (i == 1)
-            loss = 0.0
-            @timeit to "elbo estimate" begin
-                @inbounds for z in 1:n_elbo
-                    z = rand(Normal(0, 1), P)
-                    # loss_old = loss_old + elbo(z, q_μ, log.(q_var), coef, SE, R, σ2_β, p_causal, to)
-                    loss = loss + elbo(z, q_μ, log.(q_var), coef, Σ_reg, SRSinv, σ2_β, p_causal, to)
-                    # @info "$(ltime()) loss_new = $loss, loss_old = $loss_old"
-                end
-            end
-
-            loss = loss / n_elbo
-
-            if isnan(loss) == true
-                error("NaN loss detected.")
-                break
-            end
-
-            @info "$(ltime()) iteration $i, loss = $(round(loss; digits = 2)) (bigger numbers are better)"
-            # ak: stopping criterion for oscillation
-            if (prev_loss > prev_prev_loss && loss < prev_loss) ||
-               (prev_loss < prev_prev_loss && loss > prev_loss)
-                # ak: we want to keep q_μ, q_α, q_var, q_odds from i-1 iteration
-                @info "$(ltime()) Oscillation detected. Stopping at iteration $i."
-                break
-            end
-
-            # ak: stopping criterion for insufficient improvement (10%)
-            # ak: added a small constant to avoid division by zero
-            relative_improvement = abs(loss - prev_loss) / (abs(prev_loss) + 1e-8)
-            if relative_improvement < 0.10
-                # ak: we want to keep q_μ, q_α, q_var, q_odds from i-1 iteration
-                @info "$(ltime()) Insufficient improvement. Stopping at iteration $i."
-                break
-            end
-
-            @timeit to "push cavi loss" push!(cavi_loss, Float32(loss))
-
-            # ak: update the previous losses for the next iteration
-            prev_prev_loss = prev_loss
-            prev_loss = loss
-
-        end
-        
-        q_μ_best = copy(q_μ)
-        q_var_best = copy(q_var) 
-        q_α_best = copy(q_α)
-        q_odds_best = copy(q_odds)
-
     end
 
     @info "$(ltime()) CAVI updates finished"
 
     @info "$(ltime()) q_μ best returned  $(q_μ_best[1:2])"
-    #println("q_μ returned: ", q_μ_best[1:2])
-    #println(q_μ_best[1:2])
 
     # with probability q_alpha, additive effect beta is normal with mean q_mu and variance q_var
     # return q_μ, q_α, q_var, q_odds, loss, cavi_loss
-    return q_μ_best, q_α_best, q_var_best, q_odds_best, loss, cavi_loss
+    return q_μ_best, q_α_best, q_var_best, q_odds_best, best_loss, cavi_loss, cavi_iter
 
 end
 
@@ -372,7 +368,7 @@ function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, D::
         if train_nn
             nn_p_causal = 0.01 * ones(P)
             nn_σ2_β = 0.001 * ones(P)
-	    max_iter = 10
+            max_iter = 10
         else
             @info "$(ltime()) Resetting max_iter from $max_iter to 1 because the nn is frozen"
             nn_σ2_β, nn_p_causal = predict_with_nn(model, G)
@@ -399,7 +395,7 @@ function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, D::
         # cavi_q_u is cavi trained estimated betas, and coef is from iteration before
         # q_μ, q_α, q_var, odds, new_loss, cavi_losses = train_cavi(cavi_q_μ, cavi_q_α, cavi_q_var, nn_p_causal, nn_σ2_β, X_sd, i, coef, SE, R, D)
         @timeit to "train_cavi" begin
-            q_μ, q_α, q_var, odds, new_loss, cavi_losses = train_cavi(
+            q_μ, q_α, q_var, odds, new_loss, cavi_losses, cavi_iter = train_cavi(
                 nn_p_causal,
                 nn_σ2_β,
                 X_sd,
@@ -414,6 +410,9 @@ function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, D::
             )
             @info "$(ltime()) Training CAVI finished"
         end
+
+        cavi_iter = cavi_iter - 1
+        @info "$(ltime()) $cavi_iter updates for outer-loop iteration $i"
 
         @timeit to "GC" begin
             GC.gc()
@@ -482,4 +481,5 @@ function predict_with_nn(model, G)
     nn_p_causal = 1 ./ (1 .+ exp.(-outputs[2, :])) ## ak: logistic to recover orig prob
     return nn_σ2_β, nn_p_causal
 end
+
 
