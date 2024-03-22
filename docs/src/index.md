@@ -34,6 +34,7 @@ PRSFNN.rss
 PRSFNN.elbo
 PRSFNN.joint_log_prob
 PRSFNN.train_until_convergence
+PRSFNN.fit_heritability_nn
 PRSFNN.log_prior
 PRSFNN.estimate_sufficient_statistics
 PRSFNN.compute_LD
