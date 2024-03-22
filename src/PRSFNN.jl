@@ -7,7 +7,7 @@ using LinearAlgebra
 using Zygote
 using Flux
 using Flux: train!
-using Plots
+#using Plots
 using Random
 using StatsBase: sample
 using HypothesisTests: ApproximateTwoSampleKSTest
