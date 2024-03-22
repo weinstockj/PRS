@@ -67,6 +67,20 @@ function rss(β::Vector, coef::Vector, SE::Vector, R::AbstractArray, to; λ = 1e
 end
 =#
 
+"""
+    rss(β, coef, Σ, SRSinv, to; λ)
+    Calculate the summary statistic RSS likelihood
+
+```julia-repl
+rss(
+    [0.0011, .0052, 0.0013],
+    [-0.019, 0.013, -.0199],
+    PDMat(Hermitian([1.0 .03 .017; .031 1.0 -0.03; .017 -0.02 1.0]) + 1e-8 * I),
+    [1.0 0.03 0.0163333; 0.031 1.0 -0.0288235; 0.0176939 -0.0208163 1.0],
+    TimerOutput()
+)
+```
+"""
 function rss(β::Vector, coef::Vector, Σ::AbstractPDMat, SRSinv::Matrix, to; λ = 1e-8)
     # .000349, 23 allocations no turbo with P = 100
 

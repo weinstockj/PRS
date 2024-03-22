@@ -14,7 +14,7 @@ function check_no_nan(data)
 end
 
 """
- fit_heritability_nn(model, q_μ, q_var, q_alpha, G)
+ fit_heritability_nn(model, q_μ, q_var, q_alpha, G, i)
 
  Fit the heritability neural network model.
 
@@ -24,6 +24,7 @@ end
     - `q_var::Vector`: A length P vector of posterior variances
     - `q_α::Vector`: A length P vector of posterior probabilities of being causal
     - `G::AbstractArray`: A P x K matrix of annotations
+    - `i::Integer`: An integer iterator
 
 ```julia-repl
     model = Chain(
