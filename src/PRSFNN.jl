@@ -7,7 +7,7 @@ using LinearAlgebra
 using Zygote
 using Flux
 using Flux: train!
-using Plots
+#using Plots
 using Random
 using StatsBase: sample
 using HypothesisTests: ApproximateTwoSampleKSTest
@@ -16,6 +16,13 @@ using LoggingExtras
 using Dates
 using SnoopPrecompile  
 using Comonicon
+using CSV
+using DataFrames
+using DelimitedFiles
+using PDMats
+using TimerOutputs
+using BSON
+using BSON: @load, @save
 
 # include in logging call, e.g., @info "$(ltime()) message"
 function ltime()
@@ -28,6 +35,7 @@ include("train.jl")
 include("simulate.jl")
 include("LD.jl")
 include("main.jl")
+include("load_annot_ss.jl")
 
 export joint_lob_prob, RSS, elbo, train_until_convergence
 
