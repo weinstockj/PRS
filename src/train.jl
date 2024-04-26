@@ -49,7 +49,7 @@ end
     yhat[:, 2] .= 1.0 ./ (1.0 .+ exp.(-yhat[:, 2]))
 ```
 """
-function fit_heritability_nn(model, q_var, q_α, G, i=1; max_epochs=50, patience=10, mse_improvement_threshold=0.1, test_ratio=0.2, num_splits=5, weight_slab=0.2, weight_causal=0.8)
+function fit_heritability_nn(model, q_var, q_α, G, i=1; max_epochs=50, patience=10, mse_improvement_threshold=0.1, test_ratio=0.2, num_splits=5, weight_slab=1.0, weight_causal=1.0)
 
     # RMSE
     function loss(model, x, y_slab, y_causal) ## ak: need two losses for slab variance and percent causal 
