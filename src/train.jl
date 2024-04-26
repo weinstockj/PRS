@@ -1,3 +1,5 @@
+#using Plots
+
 function check_no_nan(data)
 
     if sum(isnan.(data[1])) > 0
@@ -12,6 +14,7 @@ function check_no_nan(data)
         error("NaN detected.")
     end
 end
+
 
 """
  fit_heritability_nn(model, q_μ, q_var, q_alpha, G, i)
@@ -46,7 +49,7 @@ end
     yhat[:, 2] .= 1.0 ./ (1.0 .+ exp.(-yhat[:, 2]))
 ```
 """
-function fit_heritability_nn(model, q_var, q_α, G, i=1; max_epochs=50, patience=30, mse_improvement_threshold=0.01, test_ratio=0.2, num_splits=5, weight_slab=1, weight_causal=1)
+function fit_heritability_nn(model, q_var, q_α, G, i=1; max_epochs=50, patience=10, mse_improvement_threshold=0.1, test_ratio=0.2, num_splits=5, weight_slab=0.2, weight_causal=0.8)
 
     # RMSE
     function loss(model, x, y_slab, y_causal) ## ak: need two losses for slab variance and percent causal 
@@ -57,8 +60,6 @@ function fit_heritability_nn(model, q_var, q_α, G, i=1; max_epochs=50, patience
         weighted_loss_slab = weight_slab * loss_slab
         loss_causal = Flux.mse(yhat[2, :], y_causal)
         weighted_loss_causal = weight_causal * loss_causal
-        #println("loss_slab = $weighted_loss_slab")
-        #println("loss_causal = $weighted_loss_causal")
         total_loss = weighted_loss_slab + weighted_loss_causal ## ak: losses summed to form the total loss for training
         # if !isfinite(total_loss)
         #     println("loss_slab = $loss_slab")
@@ -132,28 +133,21 @@ function fit_heritability_nn(model, q_var, q_α, G, i=1; max_epochs=50, patience
     best_model_epoch = 1
     train_losses = Float64[]
     test_losses = Float64[]
+    scaling_factor = 0.001
 
     for epoch in 1:max_epochs
         check_no_nan(data[1])
         train!(loss, model, data, opt)
-        #println("just trained")
-        #yhat_just_trained = model(transpose(G))
-        #println("yhat just trained; slab, causal")
-        #println(yhat_just_trained[1, 1:5], yhat_just_trained[2, 1:5])
-        train_loss = loss(model, best_train_data[1], log.(best_train_data[2]), logit.(best_train_data[3]))
+	train_loss = loss(model, best_train_data[1], log.(best_train_data[2]), logit.(best_train_data[3]))
         push!(train_losses, train_loss)
-        #println("computed train loss")
         # ak: validation loss
         test_loss = loss(model, best_test_data[1], log.(best_test_data[2]), logit.(best_test_data[3]))
-        #println("computed test loss")
-        #println("Test loss = $test_loss")
-        #println("Train loss = $train_loss")
         push!(test_losses, test_loss)
 
         # check for improvement in loss
         mse_improvement = (test_loss - best_loss) / test_loss
+	#println("MSE IMPROVEMENT: $mse_improvement")
 
-        #println("MSE improvement = $mse_improvement")
         # if improvement from prev iteration is greater than threshold
         if mse_improvement < -mse_improvement_threshold
             best_loss = test_loss
@@ -162,7 +156,7 @@ function fit_heritability_nn(model, q_var, q_α, G, i=1; max_epochs=50, patience
             best_model_epoch = epoch
             # and save current model as best model
             best_model = deepcopy(model)
-            #println("in best model")
+            println("in best model")
             #yhat_current_best_model = best_model(transpose(G))
             #println("yhat current best model; slab, causal")
             #println(yhat_current_best_model[1, 1:5], yhat_current_best_model[2, 1:5])
@@ -176,15 +170,17 @@ function fit_heritability_nn(model, q_var, q_α, G, i=1; max_epochs=50, patience
             @debug "$(ltime()) Early stopping after $epoch epochs."
             break
         end
-
+        
     end
+
+    #plot_loss_vs_epochs(train_losses, test_losses, i, best_model_epoch)
+    #savefig("nn_split_iter$i.png")
 
     @info "$(ltime()) Best model taken from epoch $best_model_epoch."
 
     return best_model
 end
 
-#function train_cavi(p_causal, σ2_β, X_sd, i_iter, coef, SE, R, D, to; P = 1_000, n_elbo = 10, max_iter = 2, N = 10_000, σ2 = 1.0)
 function train_cavi(p_causal, σ2_β, X_sd, i_iter, coef, SE, R, D, to; P=1_000, n_elbo=10, max_iter=10, N=10_000, σ2=1.0)
 
     function clamp_ssr(ssr, max_value=709.7) # slightly below the threshold
@@ -213,6 +209,9 @@ function train_cavi(p_causal, σ2_β, X_sd, i_iter, coef, SE, R, D, to; P=1_000,
 
         loss = -Inf
         prev_loss = -Inf
+        prev_loss_lower_limit = -Inf
+        prev_loss_upper_limit = Inf
+        current_elbo = -Inf
         prev_prev_loss = -Inf
 	best_loss = -Inf
         cavi_loss = Float32[]
@@ -230,56 +229,74 @@ function train_cavi(p_causal, σ2_β, X_sd, i_iter, coef, SE, R, D, to; P=1_000,
 
         # monitor loss convergence
         loss = 0.0
+        elbo_loss = Float32[]
         @timeit to "elbo estimate" begin
             @inbounds for z in 1:n_elbo
                 z = rand(Normal(0, 1), P)
                 # loss_old = loss_old + elbo(z, q_μ, log.(q_var), coef, SE, R, σ2_β, p_causal, to)
-                loss = loss + elbo(z, q_μ, log.(q_var), coef, Σ_reg, SRSinv, σ2_β, p_causal, to)
+                # loss = loss + elbo(z, q_μ, log.(q_var), coef, Σ_reg, SRSinv, σ2_β, p_causal, to)
+                current_elbo = elbo(z, q_μ, q_var, coef, Σ_reg, SRSinv, σ2_β, p_causal, to)
+                loss = loss + current_elbo
                 # @info "$(ltime()) loss_new = $loss, loss_old = $loss_old"
+                push!(elbo_loss, current_elbo)
             end
         end
 
         loss = loss / n_elbo
+        # 95% CI
+	current_loss_lower_limit = loss - 1.96 * std(elbo_loss) / sqrt(length(elbo_loss))
+        current_loss_upper_limit = loss + 1.96 * std(elbo_loss) / sqrt(length(elbo_loss))
 
-        if isnan(loss) == true
-            error("NaN loss detected.")
+	if (isnan(loss) == true || isinf(loss) == true)
+            #error("NaN or Inf loss detected.")
+            @info "$(ltime()) NaN or Inf loss detected.)"
+	    @info "$(ltime()) $elbo_loss)"
             break
         end
 
-        @info "$(ltime()) iteration $i, loss = $(round(loss; digits = 2)) (bigger numbers are better)"
-        # ak: stopping criterion for oscillation
-        if (prev_loss > prev_prev_loss && loss < prev_loss) ||
-           (prev_loss < prev_prev_loss && loss > prev_loss)
-            # ak: we want to keep q_μ, q_α, q_var, q_odds from i-1 iteration
-            @info "$(ltime()) Oscillation detected. Stopping at iteration $i."
-            cavi_iter = i
-            break
-        end
+        @info "$(ltime()) iteration $(i-1), loss = $(round(loss; digits = 2)) [$(round(current_loss_lower_limit; digits = 2)):$(round(current_loss_upper_limit; digits = 2))] (bigger numbers are better)"
+        # @info "$(ltime()) iteration $i, loss = $(round(loss; digits = 2)) (bigger numbers are better)"
 
-        # ak: stopping criterion for insufficient improvement (10%)
-        # ak: added a small constant to avoid division by zero
-        relative_improvement = abs(loss - prev_loss) / (abs(prev_loss) + 1e-8)
-        if relative_improvement < 0.01
-            # ak: we want to keep q_μ, q_α, q_var, q_odds from i-1 iteration
-            @info "$(ltime()) Insufficient improvement. Stopping at iteration $i."
-            cavi_iter = i
-            break
+        if ( i > 1 )
+            if ( current_loss_lower_limit > prev_loss_upper_limit )
+                @info "$(ltime()) Sufficient improvement."
+
+            elseif (prev_loss_lower_limit < current_loss_lower_limit && prev_loss_upper_limit > current_loss_lower_limit && current_loss_upper_limit > prev_loss_upper_limit)
+                @info "$(ltime()) Small improvement -- keep going"
+            else
+                @info "$(ltime()) No improvement."
+		cavi_iter = i-1
+		break
+            end
+
+            # ak: stopping criterion for insufficient improvement (10%)
+            # ak: added a small constant to avoid division by zero
+            relative_improvement = loss - prev_loss / (abs(prev_loss) + 1e-8)
+            # if relative_improvement < 0.01
+            #     # ak: we want to keep q_μ, q_α, q_var, q_odds from i-1 iteration
+            #     @info "$(ltime()) Insufficient improvement. Stopping at iteration $i."
+            #     cavi_iter = i
+            #     break
+            # end
         end
 
         @timeit to "push cavi loss" push!(cavi_loss, Float32(loss))
 
         # ak: update the previous losses for the next iteration
-        prev_prev_loss = prev_loss
-        prev_loss = loss
+        #prev_prev_loss = prev_loss
+        #prev_loss = loss
 
         q_μ_best = copy(q_μ)
         q_var_best = copy(q_var)
         q_α_best = copy(q_α)
         q_odds_best = copy(q_odds)
         best_loss = copy(loss)
+        prev_loss_lower_limit = copy(current_loss_lower_limit)
+        prev_loss_upper_limit = copy(current_loss_upper_limit)
 
         @info "$(ltime()) CAVI updates at iteration $i"
         @timeit to "update q_var" q_var .= σ2 ./ (diag(XtX) .+ 1 ./ σ2_β) ## ak: eq 8; \s^2_k; does not depend on alpha and mu from previous
+        q_sd .= sqrt.(q_var)
         @timeit to "update q_μ" begin
             @inbounds for k in 1:P
                 J = setdiff(1:P, k)
@@ -300,7 +317,7 @@ function train_cavi(p_causal, σ2_β, X_sd, i_iter, coef, SE, R, D, to; P=1_000,
 
     # with probability q_alpha, additive effect beta is normal with mean q_mu and variance q_var
     # return q_μ, q_α, q_var, q_odds, loss, cavi_loss
-    return q_μ_best, q_α_best, q_var_best, q_odds_best, best_loss, cavi_loss, cavi_iter
+    return q_μ_best, q_α_best, q_var_best, q_odds_best, best_loss, prev_loss_lower_limit, prev_loss_upper_limit, cavi_loss, cavi_iter
 
 end
 
@@ -384,6 +401,8 @@ function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, D::
     end
 
     prev_loss = -Inf
+    prev_ci_lower = -Inf
+    prev_ci_upper = Inf
     model_init = deepcopy(model)
     prev_model = deepcopy(model)
     prev_prev_model = deepcopy(model)
@@ -398,7 +417,7 @@ function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, D::
         # cavi_q_u is cavi trained estimated betas, and coef is from iteration before
         # q_μ, q_α, q_var, odds, new_loss, cavi_losses = train_cavi(cavi_q_μ, cavi_q_α, cavi_q_var, nn_p_causal, nn_σ2_β, X_sd, i, coef, SE, R, D)
         @timeit to "train_cavi" begin
-            q_μ, q_α, q_var, odds, new_loss, cavi_losses, cavi_iter = train_cavi(
+            q_μ, q_α, q_var, odds, new_loss, new_ci_lower, new_ci_upper, cavi_losses, cavi_iter = train_cavi(
                 nn_p_causal,
                 nn_σ2_β,
                 X_sd,
@@ -414,7 +433,7 @@ function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, D::
             @info "$(ltime()) Training CAVI finished"
         end
 
-        cavi_iter = cavi_iter - 1
+        #cavi_iter = cavi_iter - 1
         @info "$(ltime()) $cavi_iter updates for outer-loop iteration $i"
 
         @timeit to "GC" begin
@@ -425,16 +444,33 @@ function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, D::
             @debug "$(ltime()) difference from n, n-1 (%) = $(abs(new_loss - prev_loss) / abs(prev_loss))"
         end
 
+	println("CHECKING FOR OUTER-LOOP CONVERGENCE")
+        println("previous range: [$prev_ci_lower:$prev_ci_upper]")
+        println("current range: [$new_ci_lower:$new_ci_upper]")
+
         # check for convergence
-        if abs(new_loss - prev_loss) / abs(prev_loss) < threshold
-            @info "$(ltime()) converged!"
-            break
+        if i > 1
+            # if abs(new_loss - prev_loss) / abs(prev_loss) < threshold
+	    #if (( new_ci_upper < prev_ci_lower ) || ( prev_ci_lower < new_ci_lower && prev_ci_upper > new_ci_upper ) ||
+            #    ( new_ci_lower < prev_ci_lower && new_ci_upper > prev_ci_upper ))
+            #    @info "$(ltime()) converged!"
+            #    break
+            #end
+
+	    if (( new_ci_lower > prev_ci_upper ) || (prev_ci_lower < new_ci_lower && prev_ci_upper > new_ci_lower && new_ci_upper > prev_ci_upper))
+                @info "$(ltime()) outer CAVI hasn't converged yet"
+            else
+                @info "$(ltime()) outer CAVI has converged!"
+		break
+	    end
         end
 
         # plot_cavi_losses(cavi_losses, i)
         # savefig("cavi_loss_iter$i.png")
 
         prev_loss = copy(new_loss)
+        prev_ci_lower = copy(new_ci_lower)
+        prev_ci_upper = copy(new_ci_upper)
 
         ## ak: Set α(i) =α and μ(i) =μ
         cavi_q_μ = copy(q_μ)
