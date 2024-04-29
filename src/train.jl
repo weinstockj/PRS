@@ -144,6 +144,13 @@ function fit_heritability_nn(model, q_var, q_α, G, i=1; max_epochs=50, patience
         test_loss = loss(model, best_test_data[1], log.(best_test_data[2]), logit.(best_test_data[3]))
         push!(test_losses, test_loss)
 
+	if (epoch == 1)
+            mse_improvement_threshold = test_loss * scaling_factor
+            #if ( mse_improvement_threshold < 0.01)
+            #    mse_improvement_threshold = 0.01
+            #end
+        end
+
         # check for improvement in loss
         mse_improvement = (test_loss - best_loss) / test_loss
 	#println("MSE IMPROVEMENT: $mse_improvement")
@@ -457,7 +464,7 @@ function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, D::
             #    break
             #end
 
-	    if (( new_ci_lower > prev_ci_upper ) || (prev_ci_lower < new_ci_lower && prev_ci_upper > new_ci_lower && new_ci_upper > prev_ci_upper))
+	    if (( new_ci_lower > prev_ci_upper )) #|| (prev_ci_lower < new_ci_lower && prev_ci_upper > new_ci_lower && new_ci_upper > prev_ci_upper))
                 @info "$(ltime()) outer CAVI hasn't converged yet"
             else
                 @info "$(ltime()) outer CAVI has converged!"
