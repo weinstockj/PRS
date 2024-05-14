@@ -2,28 +2,29 @@ function standardize(matrix)
     return (matrix .- mean(matrix, dims=1)) ./ std(matrix, dims=1)
 end
 
-function plot_loss_vs_epochs(train_losses, test_losses, i, epoch_model_taken)
-    plot(1:length(train_losses), train_losses, xlabel="Epochs", ylabel="Loss", label="train", title="Loss vs. Epochs, iteration $i, best at $epoch_model_taken", reuse=false)
-    plot!(1:length(test_losses), test_losses, lc=:orange, label="test")
-    vline!([epoch_model_taken], label="epoch of best")
-end
-
 
 """
     log_prior(β, σ2_β, p_causal)
-    Calculates the log density of β based on a spiek and slab prior
+    Calculates the log density of β based on a spike and slab prior
 """
-function log_prior(β::Vector, σ2_β::Vector, p_causal::Vector)
+function log_prior(β::Vector, σ2_β::Vector, p_causal::Vector, to; spike_σ2 = 1e-8)
 
     P = length(β)
-    # prob_slab = 0.10
-    # L = prob_slab * 1_000
-    # h2 = 0.10
-    spike_σ2 = 1e-6
     slab_dist = Normal.(0, sqrt.(σ2_β .+ spike_σ2))
     spike_dist = Normal(0, sqrt(spike_σ2))
-    logprobs = log.(pdf.(slab_dist, β) .* p_causal .+ pdf.(spike_dist, β) .* (1 .- p_causal))
-    return sum(logprobs)
+    # gen = ([logpdf(slab_dist[i], β[i]) + log(p_causal[i]), logpdf(spike_dist, β[i]) + log(1.0 - p_causal[i])] for i in 1:P)
+    logprob = 0.0 
+    container = zeros(2)
+    @timeit to "calculate logsumexp loop" @inbounds @fastmath for i in 1:P
+        x = β[i]
+        p = p_causal[i]
+        container[1] = logpdf(slab_dist[i], x) + log(p)
+        container[2] = logpdf(spike_dist, x) + log(1.0 - p)
+        logprob += logsumexp(container)
+    end 
+    
+    # return @fastmath sum(logsumexp.(gen))
+    return sum(logprob)
 end
 
 """
@@ -67,33 +68,11 @@ function rss(β::Vector, coef::Vector, SE::Vector, R::AbstractArray, to; λ = 1e
 end
 =#
 
-"""
-    rss(β, coef, Σ, SRSinv, to; λ)
-    Calculate the summary statistic RSS likelihood
+function rss(β::Vector, coef::Vector, Σ::AbstractPDMat, SRSinv::Matrix, to)
 
-```julia-repl
-rss(
-    [0.0011, .0052, 0.0013],
-    [-0.019, 0.013, -.0199],
-    PDMat(Hermitian([1.0 .03 .017; .031 1.0 -0.03; .017 -0.02 1.0]) + 1e-8 * I),
-    [1.0 0.03 0.0163333; 0.031 1.0 -0.0288235; 0.0176939 -0.0208163 1.0],
-    TimerOutput()
-)
-```
-"""
-function rss(β::Vector, coef::Vector, Σ::AbstractPDMat, SRSinv::Matrix, to; λ = 1e-8)
-    # .000349, 23 allocations no turbo with P = 100
-
-    # .01307 with P = 500
-    # S = Matrix(Diagonal(SE))
-   # Sinv = Matrix(Diagonal(1 ./ SE)) # need to wrap in Matrix for ReverseDiff
-    # μ = @timeit to "update μ within rss"  (SE .* R .* (1 ./ SE)') * β
-    μ = @timeit to "update μ within rss"  SRSinv * β
-    val = @timeit to "calculate logpdf" logpdf(MvNormal(μ, Σ), coef)
-    #
+    μ = @timeit to "update μ within rss" @fastmath SRSinv * β
+    val = @timeit to "calculate logpdf" @fastmath logpdf(MvNormal(μ, Σ), coef)
     return val
-    #return logpdf(MvNormal(μ, Σ), coef)
-    #return μ, Σ
 end
 """
 `joint_log_prob(β, coef, SE, R, σ2_β, p_causal)`
@@ -112,9 +91,9 @@ joint_log_prob(
 )
 ```
 """
-joint_log_prob(β::Vector, coef::Vector, SE::Vector, R::Matrix, σ2_β::Vector, p_causal::Vector, to) = rss(β, coef, SE, R, to) + log_prior(β, σ2_β, p_causal)
+joint_log_prob(β::Vector, coef::Vector, SE::Vector, R::Matrix, σ2_β::Vector, p_causal::Vector, to) = rss(β, coef, SE, R, to) + log_prior(β, σ2_β, p_causal, to)
 
-joint_log_prob(β::Vector, coef::Vector, Σ::AbstractPDMat, SRSinv::Matrix, σ2_β::Vector, p_causal::Vector, to) = rss(β, coef, Σ, SRSinv, to) + log_prior(β, σ2_β, p_causal)
+joint_log_prob(β::Vector, coef::Vector, Σ::AbstractPDMat, SRSinv::Matrix, σ2_β::Vector, p_causal::Vector, to) = rss(β, coef, Σ, SRSinv, to) + log_prior(β, σ2_β, p_causal, to)
 
 """
     elbo(z, q_μ, log_q_var, coef, SE, R, σ2_β, p_causal)

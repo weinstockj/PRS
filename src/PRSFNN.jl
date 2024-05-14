@@ -1,13 +1,11 @@
 module PRSFNN
 
-using LoopVectorization
 using Distributions
 using Statistics
 using LinearAlgebra
 using Zygote
 using Flux
 using Flux: train!
-#using Plots
 using Random
 using StatsBase: sample
 using HypothesisTests: ApproximateTwoSampleKSTest
@@ -36,6 +34,8 @@ include("simulate.jl")
 include("LD.jl")
 include("main.jl")
 include("load_annot_ss.jl")
+include("utils.jl")
+include("nn.jl")
 
 export joint_lob_prob, RSS, elbo, train_until_convergence
 
