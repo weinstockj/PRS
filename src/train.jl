@@ -32,6 +32,7 @@ function train_cavi(p_causal, σ2_β, X_sd, i_iter, coef, SE, R, D, to; P = 1_00
         λ = 1e-8
         Σ_reg = @timeit to "Σ_reg_lambda_diagonal" PDMat(Hermitian(Σ + λ * I))
         SRSinv = @timeit to "SRSinv" SR .* (1 ./ SE')
+
     end
 
     @inbounds for i in 1:max_iter

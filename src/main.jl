@@ -11,7 +11,7 @@ This function defines the command line interface for the PRSFNN package.
 - `annotations`: A path to an appropriately formatted annotations file
 
 """
-@main function main(block::String = "chr1_16103_1170341", 
+@main function main(block::String = "chr15_23850554_26295433", 
             annot_data_path::String = "/data/abattle4/april/hi_julia/annotations/ccre/celltypes", 
             ld_panel_path::String = "/data/abattle4/jweins17/LD_REF_PANEL/output/bcf",
 	    gwas_file_name::String = "bmi_gwas.tsv",
@@ -41,27 +41,29 @@ This function defines the command line interface for the PRSFNN package.
     end
 
     mkpath(joinpath("data", block))
-    LD_reference_filtered = joinpath("data", block, "filtered_current_block")
-    snpdata = SnpData(joinpath(ld_panel_path, block, "filtered"))
+    LD_reference_filtered = joinpath("data", block, "filtered_EUR_current_block")
+    snpdata = SnpData(joinpath(ld_panel_path, block, "filtered_EUR"))
     SnpArrays.filter(snpdata; des=LD_reference_filtered, f_snp = x -> x[:position] in current_LD_block_positions)
     LD_reference_filtered = LD_reference_filtered * ".bed"
-    LD, D = compute_LD(LD_reference_filtered)
+    LD, D, good_variants = compute_LD(LD_reference_filtered)
+
+    @assert !any(isnan.(LD))
 
     PRS = train_until_convergence(
-        summary_stats.beta,
-        summary_stats.se,
-        LD, # correlation matrix
-        D,
-        annotations,
+        summary_stats.beta[good_variants],
+        summary_stats.se[good_variants],
+        LD, # correlation matrix already filtered for good variants
+        D, # already filtered for good variants
+        annotations[good_variants, :],
         model = model,
-        N = summary_stats.n_complete_samples,
+        N = summary_stats.n_complete_samples[good_variants],
         train_nn = train_nn,
         max_iter = 2
     )
 
     open(betas_output_file, "w") do io
         write(io, "variant\tmu\talpha\tvar\tss_beta\n")
-        writedlm(io, [summary_stats.variant PRS[1] PRS[2] PRS[3] summary_stats.beta], "\t")
+        writedlm(io, [summary_stats.variant[good_variants] PRS[1] PRS[2] PRS[3] summary_stats.beta[good_variants]], "\t")
     end
 
     if train_nn
@@ -102,7 +104,7 @@ function interpret_model(block = "chr1_16103_1170341", model_file = "/data/abatt
 
     for j in eachindex(cell_types)
         annotations_copy[:, j] .= 1
-        nn_σ2_β_j, nn_p_causal_j = predict_with_nn(model, annotations_copy)
+        nn_σ2_β_j, nn_p_causal_j = predict_with_nn(model, Float32.(annotations_copy))
         effects_σ2_β[j] = nn_σ2_β_j[max_p_causal_index] - nn_σ2_β[max_p_causal_index]
         effects_p_causal[j] = nn_p_causal_j[max_p_causal_index] - nn_p_causal[max_p_causal_index]
         annotations_copy[:, j] = annotations[:, j] # reset the j-th column to the original values
