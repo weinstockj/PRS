@@ -9,7 +9,8 @@ function compute_LD(LD_reference::String = "test_data/test_data/chr1_16103_11703
     # rows are samples, columns are SNPs
     genotypes_float = convert(Matrix{Float64}, genotypes, impute=true)
     mean_frequencies = vec(mean(genotypes_float; dims = 1))
-    good_variants = findall((mean_frequencies .> 0.0) .& (mean_frequencies .< 2.0)) # remove monomorphic variants
+    sds              = vec(std(genotypes_float; dims = 1))
+    good_variants = findall((mean_frequencies .> 0.0) .& (mean_frequencies .< 2.0) .& (sds .> .01)) # remove monomorphic variants and those with no variance
     @info "$(ltime()) Number of polymorphic variants out of all variants: $(length(good_variants)) / $(size(genotypes_float, 2))"
     good_genotypes = view(genotypes_float, :, good_variants)
     R = cor(good_genotypes)
