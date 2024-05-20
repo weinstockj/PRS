@@ -1,7 +1,7 @@
 name = "PRSFNN"
 uuid = "520d13aa-a0f7-11ee-0338-154bca984760"
 authors = ["April Kim <aprilkim@jhu.edu>", "Josh Weinstock <jweins17@jhu.edu>"]
-version = "1.9.4"
+version = "0.2.0"
 
 [deps]
 BSON = "fbb218c0-5317-5bc6-957e-2ee96dd4b1f0"
