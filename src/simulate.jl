@@ -39,7 +39,7 @@ function draw_slab_s_given_annotations(P; K = 100)
     return s, G, choices, ϕ, σ2
 end
 
-function simulate_raw(;N = 10_000, P = 1_000, K = 100)
+function simulate_raw(;N = 10_000, P = 1_000, K = 100, h2 = 0.10)
 
     Random.seed!(0)
 
@@ -54,7 +54,6 @@ function simulate_raw(;N = 10_000, P = 1_000, K = 100)
     p_causal = 0.10
     L = p_causal * P # 100
     γ = rand(Bernoulli(p_causal), P)
-    h2 = 0.10
 
     # Simulation annotations and create expected s parameter for causal SNPs
     # s, G, _ = draw_slab_s_given_annotations(sum(γ))
