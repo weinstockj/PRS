@@ -18,7 +18,7 @@ function train_cavi(p_causal, σ2_β, X_sd, i_iter, coef, SE, R, D, to; P = 1_00
         q_odds_best = copy(q_odds)
 
         Xty = @timeit to "copy Xty" copy(coef .* D)
-        XtX = @timeit to "Create XtX" Diagonal(X_sd) * R * Diagonal(X_sd) .* N
+        XtX = @timeit to "Create XtX" Symmetric(Diagonal(X_sd) * R * Diagonal(X_sd) .* N)
 
         mean_loss = -Inf
         best_loss = -Inf
@@ -76,7 +76,7 @@ function train_cavi(p_causal, σ2_β, X_sd, i_iter, coef, SE, R, D, to; P = 1_00
 
         @info "$(ltime()) CAVI updates at iteration $i"
         @timeit to "update q_var" q_var .= σ2 ./ (diag(XtX) .+ 1 ./ σ2_β) ## ak: eq 8; \s^2_k; does not depend on alpha and mu from previous
-        @timeit to "update sd" q_sd .= sqrt.(q_var)
+        @timeit to "update q_sd" q_sd .= sqrt.(q_var)
         @timeit to "update q_μ" begin
             @inbounds @fastmath for k in 1:P
                 J = setdiff(1:P, k)
@@ -94,6 +94,37 @@ function train_cavi(p_causal, σ2_β, X_sd, i_iter, coef, SE, R, D, to; P = 1_00
     return q_μ_best, q_α_best, q_var_best, q_odds_best, best_loss, best_se_loss
 end
 
+"""
+    `infer_σ2(coef, SE, R, D, X_sd, N, P)`
+
+    # Arguments
+    - `coef::Vector`: A length P vector of effect sizes
+    - `SE::Vector`: A length P vector of standard errors
+    - `R::AbstractArray`: A P x P correlation matrix
+    - `D::Vector`: A length P vector of the sum of squared genotypes
+    - `N`: Number of samples
+    - `P`: Number of SNPs
+"""
+function infer_σ2(coef::Vector, SE::Vector, R::AbstractArray, D::Vector, X_sd::Vector, N::Real, P::Int64; λ = 100)
+
+    Xty = coef .* D
+    XtX = Symmetric(X_sd .* R .* X_sd') .* N
+    # prob = LinearProblem(XtX + λ * I, Xty)
+    # init(prob);
+    # sol = solve(prob)
+    # β_joint = sol.u
+    yty = maximum(D .* (SE .^ 2) .* (N - 1) .+ D .* (coef .^ 2)) 
+    # R2 = β_joint' * Xty / yty
+    R2 = 0.0 # assume no h2 because chunk is small
+    σ2 = (1 - R2) * yty / (N - P)
+
+    GC.gc()
+
+    @assert σ2 > 0 "σ2 is negative"
+    # @assert R2 > 0 "R2 is negative"
+
+    return σ2, R2, yty
+end
 
 """
     `train_until_convergence(coef, SE, R, D, G; max_iter = 20, threshold = 0.1, N = 10_000)`
@@ -101,9 +132,9 @@ end
     # Arguments
     - `coef::Vector`: A length P vector of effect sizes
     - `SE::Vector`: A length P vector of standard errors
-    - 'R::AbstractArray': A P x P correlation matrix
-    - 'D::Vector': A length P vector of the sum of squared genotypes
-    - 'G::AbstractArray': A P x K matrix of annotations
+    - `R::AbstractArray`: A P x P correlation matrix
+    - `D::Vector`: A length P vector of the sum of squared genotypes
+    - `G::AbstractArray`: A P x K matrix of annotations
     
 """
 function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, D::Vector, G::AbstractArray; model = model, max_iter = 4, threshold = 0.2, train_nn = true, N = 10_000) 
@@ -123,6 +154,10 @@ function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, D::
         cavi_q_α = copy(q_α) # ones(P) .* 0.10
 
         X_sd = sqrt.(D ./ N)
+
+
+        @timeit to "inferring σ2" σ2, R2, yty = infer_σ2(coef, SE, R, D, X_sd, median(N), P)
+        @info "$(ltime()) Estimated σ2 = $(round(σ2; digits = 2)), h2 = $(round(R2; digits = 2))"
 
         if train_nn
             nn_p_causal = 0.01 * ones(P)
@@ -157,9 +192,10 @@ function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, D::
                 SE, 
                 R, 
                 D,
-                to, # the timer function
+                to; # the timer function
                 P=P,
-                N=N
+                N=N,
+                σ2=σ2
             )
             @info "$(ltime()) Training CAVI finished"
         end

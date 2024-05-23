@@ -21,6 +21,7 @@ using PDMats
 using TimerOutputs
 using BSON
 using BSON: @load, @save
+using LinearSolve
 
 # include in logging call, e.g., @info "$(ltime()) message"
 function ltime()
