@@ -111,7 +111,7 @@ function test_infer_σ2()
         raw = simulate_raw(;N = N, P = P, K = K, h2 = h2)
         ss = estimate_sufficient_statistics(raw[1], raw[3])
         X_sd = sqrt.(ss[5] ./ N)
-        σ2, R2, yty = infer_σ2(ss[1], ss[2], ss[4], ss[5], X_sd, N, P)
+        σ2, R2, yty = infer_σ2(ss[1], ss[2], ss[4], ss[5], X_sd, N, P; estimate = true)
         @test abs(R2 - h2) < 0.05
 end
 
@@ -119,4 +119,5 @@ end
     test_rss_elbo()
     test_nn()
     test_complete_run()
+    test_infer_σ2()
 end

@@ -105,17 +105,21 @@ end
     - `N`: Number of samples
     - `P`: Number of SNPs
 """
-function infer_σ2(coef::Vector, SE::Vector, R::AbstractArray, D::Vector, X_sd::Vector, N::Real, P::Int64; λ = 100)
+function infer_σ2(coef::Vector, SE::Vector, R::AbstractArray, D::Vector, X_sd::Vector, N::Real, P::Int64; estimate = false, λ = 100)
 
     Xty = coef .* D
     XtX = Symmetric(X_sd .* R .* X_sd') .* N
-    # prob = LinearProblem(XtX + λ * I, Xty)
-    # init(prob);
-    # sol = solve(prob)
-    # β_joint = sol.u
+    if estimate
+        prob = LinearProblem(XtX + λ * I, Xty)
+        init(prob);
+        sol = solve(prob)
+        β_joint = sol.u
+        yty = maximum(D .* (SE .^ 2) .* (N - 1) .+ D .* (coef .^ 2)) 
+        R2 = β_joint' * Xty / yty
+    else
+        R2 = 0.0 # assume no h2
+    end
     yty = maximum(D .* (SE .^ 2) .* (N - 1) .+ D .* (coef .^ 2)) 
-    # R2 = β_joint' * Xty / yty
-    R2 = 0.0 # assume no h2 because chunk is small
     σ2 = (1 - R2) * yty / (N - P)
 
     GC.gc()
