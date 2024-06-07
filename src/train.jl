@@ -141,7 +141,8 @@ end
     - `G::AbstractArray`: A P x K matrix of annotations
     
 """
-function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, D::Vector, G::AbstractArray; model = model, max_iter = 4, threshold = 0.2, train_nn = true, N = 10_000) 
+function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, D::Vector, G::AbstractArray; model = model, max_iter = 5, threshold = 2, train_nn = true, N = 10_000) 
+#function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, D::Vector, G::AbstractArray; model = model, max_iter = 5, threshold = 0.2, train_nn = true, N = 10_000) 
 
     to = TimerOutput()
     ## initialize
@@ -158,7 +159,6 @@ function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, D::
         cavi_q_α = copy(q_α) # ones(P) .* 0.10
 
         X_sd = sqrt.(D ./ N)
-
 
         @timeit to "inferring σ2" σ2, R2, yty = infer_σ2(coef, SE, R, D, X_sd, median(N), P)
         @info "$(ltime()) Estimated σ2 = $(round(σ2; digits = 2)), h2 = $(round(R2; digits = 2))"
