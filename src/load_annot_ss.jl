@@ -1,12 +1,25 @@
-function load_annot_and_summary_stats(annot::String, summary_statistics::String; min_MAF=0.01)
+function load_annot_and_summary_stats(annot_path::String, summary_statistics_path::String; min_MAF=0.01)
 
     unzip(a) = map(x->getfield.(a, x), fieldnames(eltype(a)))
 
-    annot = CSV.read(annot, DataFrame)
+    @info "$(ltime()) Reading in summary statistics at $summary_statistics_path"
+    annot = CSV.read(annot_path, DataFrame)
     rename!(annot,:snp_id => :variant)
 
-    summary_statistics = CSV.read(summary_statistics, DataFrame)
+    summary_statistics = CSV.read(summary_statistics_path, DataFrame)
 
+    # TODO: this is hacky
+    if occursin("neale", summary_statistics_path)
+        rename!(
+            summary_statistics, 
+            :SNP => :variant,
+            :MAF => :minor_AF, 
+            :N => :n_complete_samples, 
+            :BETA => :beta, 
+            :SE => :se, 
+            :PVALUE => :pval
+        )
+    end
     # TODO: we need to decide on a standard input format
     required_columns = [:variant, :minor_AF, :n_complete_samples, :beta, :se, :pval]
     summary_statistics = select(summary_statistics, required_columns)
