@@ -30,7 +30,7 @@
     yhat[:, 2] .= 1.0 ./ (1.0 .+ exp.(-yhat[:, 2]))
 ```
 """
-function fit_heritability_nn(model, q_var, q_α, G, i=1; max_epochs=50, patience=30, mse_improvement_threshold=0.01, test_ratio=0.2, num_splits=5)
+function fit_heritability_nn(model, q_var, q_α, G, i=1; max_epochs=2000, patience=70, mse_improvement_threshold=0.01, test_ratio=0.2, num_splits=10, optim_type = AdamW(0.05))
 
     # G_standardized = standardize(G)
 
@@ -49,12 +49,8 @@ function fit_heritability_nn(model, q_var, q_α, G, i=1; max_epochs=50, patience
         train_indices = permuted_indices[1:end-num_test]
         test_indices = permuted_indices[end-num_test+1:end]
 
-        # ak: get matching posterior variances in training and testing
-        train_posterior_vars = q_var[train_indices]
-        test_posterior_vars = q_var[test_indices]
-
         # ak: compute the KS statistic and pick the split with smallest KS stats
-        ks_test = ApproximateTwoSampleKSTest(train_posterior_vars, test_posterior_vars)
+        ks_test = ApproximateTwoSampleKSTest(q_α[train_indices], q_α[test_indices])
         ks_n = ks_test.n_x*ks_test.n_y/(ks_test.n_x+ks_test.n_y)
         ks_statistic = (sqrt(ks_n)*ks_test.δ)
 
@@ -66,12 +62,13 @@ function fit_heritability_nn(model, q_var, q_α, G, i=1; max_epochs=50, patience
 
     end
 
-    opt = Flux.setup(Momentum(), model)
-    data = [(
-                Float32.(best_train_data[1]), 
-                Float32.(log.(best_train_data[2])), # later apply inverse of exp.(x) 
-                Float32.(logit.(best_train_data[3])) # later apply logistic to recover orig prob
-           )]
+    opt = Flux.setup(optim_type, model)
+    X = Float32.(transpose(best_train_data[1]))
+    Y = Float32.(transpose(hcat(log.(best_train_data[2]), logit.(best_train_data[3]))))
+    data = (X, Y)
+
+    # Main.@infiltrate
+    DL = Flux.DataLoader(data, batchsize=10, shuffle=true, rng = Random.seed!(1))
     
     best_loss = Inf
     best_model = deepcopy(model)
@@ -80,27 +77,30 @@ function fit_heritability_nn(model, q_var, q_α, G, i=1; max_epochs=50, patience
     train_losses = Float64[]
     test_losses = Float64[]
 
+    # check_no_nan(data[1])
+
+    # @show model.layers[1].weight
+    # @show model.layers[1].bias
+
     @inbounds for epoch in 1:max_epochs
-        check_no_nan(data[1])
-        train!(nn_loss, model, data, opt)
+        train!(nn_loss, model, DL, opt)
         train_loss = nn_loss(
                 model, 
-                Float32.(best_train_data[1]), 
-                Float32.(log.(best_train_data[2])), 
-                Float32.(logit.(best_train_data[3]))
+                Float32.(transpose(best_train_data[1])), 
+                Float32.(transpose(hcat(log.(best_train_data[2]), logit.(best_train_data[3]))))
             )
         push!(train_losses, train_loss)
 
         # ak: validation loss
         test_loss = nn_loss(
                 model,
-                Float32.(best_test_data[1]),
-                Float32.(log.(best_test_data[2])),
-                Float32.(logit.(best_test_data[3]))
+                Float32.(transpose(best_test_data[1])),
+                Float32.(transpose(hcat(log.(best_test_data[2]), logit.(best_test_data[3]))))
             )
         push!(test_losses, test_loss)
 
         mse_improvement = (test_loss - best_loss) / test_loss
+        @info "$(ltime()) Epoch: $epoch, Train loss: $(round(train_loss, digits=2)), Test loss: $(round(test_loss, digits=2)), Relative change (ideally negative): $(round(mse_improvement; digits = 2))"
 
         # if improvement from prev iteration is greater than threshold
         if mse_improvement < -mse_improvement_threshold
@@ -148,13 +148,22 @@ function predict_with_nn(model, G)
 end
 
 # RMSE
-function nn_loss(model, x, y_slab, y_causal; weight_slab = 1.0, weight_causal = 1.0) ## ak: need two losses for slab variance and percent causal 
+function nn_loss(model, G, y; weight_slab = 1.0, weight_causal = 1.0) ## ak: need two losses for slab variance and percent causal 
 
-    yhat = model(transpose(x))
-    loss_slab = @views Flux.mse(yhat[1, :], y_slab)
+    yhat = model(G)
+    loss_slab = @views Flux.mse(yhat[1, :], y[1, :])
     weighted_loss_slab = weight_slab * loss_slab
-    loss_causal = @views Flux.mse(yhat[2, :], y_causal)
+    loss_causal = @views Flux.mse(yhat[2, :], y[2, :])
     weighted_loss_causal = weight_causal * loss_causal
     total_loss = weighted_loss_slab + weighted_loss_causal ## ak: losses summed to form the total loss for training
     return total_loss
 end
+
+# function nn_loss(model, batch; weight_slab = 1.0, weight_causal = 1.0) ## ak: need two losses for slab variance and percent causal 
+
+#     @show batch 
+#     G = batch[1]
+#     y = batch[2]
+
+#     return nn_loss(model, G, y; weight_slab = weight_slab, weight_causal = weight_causal)
+# end
