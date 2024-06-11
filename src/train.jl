@@ -284,6 +284,8 @@ function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, D::
     @info "$(ltime()) Inferred $(round(sum(cavi_q_α .> .50), digits = 2)) variants with PIP >= 50%"
     show(to)
 
+    @info "$(ltime()) Training finished"
+
     if train_nn
         return cavi_q_μ, cavi_q_α, cavi_q_var, prev_model
     else
