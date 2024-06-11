@@ -11,12 +11,14 @@ This function defines the command line interface for the PRSFNN package.
 - `annotations`: A path to an appropriately formatted annotations file
 
 """
-@main function main(block::String = "chr18_12528622_15410468", 
+@main function main(block::String = "chr18_60426196_63290163", 
             annot_data_path::String = "/data/abattle4/april/hi_julia/annotations/ccre/celltypes", 
             ld_panel_path::String = "/data/abattle4/jweins17/LD_REF_PANEL/output/bcf",
-	    gwas_file_name::String = "bmi_gwas.tsv",
+	    # gwas_file_name::String = "bmi_gwas.tsv",
+	    gwas_file_name::String = "neale_bmi_gwas.tsv",
 	    model_file::String = "trained_model.bson",
-            betas_output_file::String = "PSRFNN_out.tsv", interpretation_output_file::String = "nn_interpretation.tsv"; min_MAF = 0.01, train_nn = true, H = 5, max_iter = 5)
+	    # model_file::String = "test_trained_model.bson",
+            betas_output_file::String = "PRSFNN_out.tsv", interpretation_output_file::String = "nn_interpretation.tsv"; min_MAF = 0.01, train_nn = true, H = 5, max_iter = 5)
 
     @info "$(ltime()) Current block: $block"
     current_chr = split(block, "_")[1]
@@ -35,7 +37,7 @@ This function defines the command line interface for the PRSFNN package.
         @info "$(ltime()) $model_file not found, creating new model!"
         # File doesn't exist, create a new model
         K = size(annotations, 2)
-        layer_1 = Dense(K => H, relu; init = Flux.glorot_normal(gain = 0.0005))
+        layer_1 = Dense(K => H, relu; init = Flux.glorot_normal(gain = 0.0001))
         layer_output = Dense(H => 2)
         model = Chain(layer_1, layer_output)
     end
