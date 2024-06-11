@@ -53,7 +53,7 @@ end
 function test_complete_run()
     K = 100
     model = Chain(
-            Dense(K => 5, relu; init = Flux.glorot_normal(gain = 0.0005)),
+            Dense(K => 5, relu; init = Flux.glorot_normal(gain = 0.0001)),
             Dense(5 => 2)
     )
     raw = simulate_raw(;N = 10_000, P = 1000, K = 100)
@@ -77,7 +77,7 @@ function test_nn()
     K = 50
 
     model = Chain(
-            Dense(K => 5, relu; init = Flux.glorot_normal(gain = 0.0005)),
+            Dense(K => 5, relu; init = Flux.glorot_normal(gain = 0.0001)),
             Dense(5 => 2)
     )
 
