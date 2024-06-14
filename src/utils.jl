@@ -24,7 +24,8 @@ end
 
 function logit(x)
     x = clamp(x)   
-    return log.(x ./ (1 .- x))
+    # return log.(x ./ (1 .- x))
+    return LogExpFunctions.logit.(x)
 end
 
 function clamp_nn_fit_h_nn(q_μ_squared, max_value = 1e-5) # slightly below the threshold
