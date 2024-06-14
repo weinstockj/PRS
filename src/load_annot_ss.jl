@@ -17,6 +17,7 @@ function load_annot_and_summary_stats(annot::String, summary_statistics::String;
     summary_statistics = CSV.read(summary_statistics, DataFrame)
 
     required_columns = [:SNP, :MAF, :N, :BETA, :SE, :PVALUE]
+
     summary_statistics = select(summary_statistics, required_columns)
     delete!(summary_statistics, findall(nonunique(select(summary_statistics, [:SNP]))))
     summary_statistics[!, :CHR], summary_statistics[!, :BP] = unzip(extract_chr_pos.(summary_statistics[:, :SNP]))

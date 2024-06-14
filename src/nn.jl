@@ -32,6 +32,7 @@
 """
 function fit_heritability_nn(model, q_μ_sq, q_α, G, i=1; max_epochs=3000, patience=400, mse_improvement_threshold=0.01, test_ratio=0.2, num_splits=10, optim_type = AdamW(0.02))
 
+
     # G_standardized = standardize(G)
 
     #λ = 1e-6
@@ -72,8 +73,7 @@ function fit_heritability_nn(model, q_μ_sq, q_α, G, i=1; max_epochs=3000, pati
     opt = Flux.setup(optim_type, model)
     X = Float32.(transpose(best_train_data[1]))
     Y = Float32.(transpose(hcat(log.(best_train_data[2]), logit.(best_train_data[3]))))
-#    Y = Float32.(transpose(hcat(log.(best_train_data[2] .+ λ), logit.(best_train_data[3]))))
-#    Y = Float32.(transpose(hcat(log1pexp.(best_train_data[2]), logit.(best_train_data[3]))))
+
     data = (X, Y)
 
     # Main.@infiltrate
@@ -97,7 +97,6 @@ function fit_heritability_nn(model, q_μ_sq, q_α, G, i=1; max_epochs=3000, pati
                 model, 
                 Float32.(transpose(best_train_data[1])), 
                 Float32.(transpose(hcat(log.(best_train_data[2]), logit.(best_train_data[3]))))
-#                Float32.(transpose(hcat(log1pexp.(best_train_data[2]), logit.(best_train_data[3]))))
             )
         push!(train_losses, train_loss)
 
@@ -106,12 +105,12 @@ function fit_heritability_nn(model, q_μ_sq, q_α, G, i=1; max_epochs=3000, pati
                 model,
                 Float32.(transpose(best_test_data[1])),
                 Float32.(transpose(hcat(log.(best_test_data[2]), logit.(best_test_data[3]))))
-#                Float32.(transpose(hcat(log1pexp.(best_test_data[2]), logit.(best_test_data[3]))))
             )
         push!(test_losses, test_loss)
 
         mse_improvement = (test_loss - best_loss) / test_loss
-        #@info "$(ltime()) Epoch: $epoch, Train loss: $(round(train_loss, digits=2)), Test loss: $(round(test_loss, digits=2)), Relative change (ideally negative): $(round(mse_improvement; digits = 2))"
+
+        @info "$(ltime()) Epoch: $epoch, Train loss: $(round(train_loss, digits=2)), Test loss: $(round(test_loss, digits=2)), Relative change (ideally negative): $(round(mse_improvement; digits = 2))"
 
         # if improvement from prev iteration is greater than threshold
         if mse_improvement < -mse_improvement_threshold
@@ -198,3 +197,4 @@ function plot_loss_vs_epochs(train_losses, test_losses, i, epoch_model_taken)
     plot!(1:length(test_losses), test_losses, lc=:orange, label="test")
     vline!([epoch_model_taken], label="epoch of best")
 end
+

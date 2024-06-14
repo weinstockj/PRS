@@ -11,10 +11,12 @@ This function defines the command line interface for the PRSFNN package.
 - `annotations`: A path to an appropriately formatted annotations file
 
 """
+
 @main function main(block::String = "chr18_59047676_60426196", #"chr2_10560_1415211", 
             #gwas_data_path::String = "/data/abattle4/april/hi_julia/annotations/ccre/celltypes", 
             annot_data_path::String = "/data/abattle4/jweins17/annotations/output", 
             ld_panel_path::String = "/data/abattle4/jweins17/LD_REF_PANEL/output/bcf",
+
 	    gwas_file_name::String = "neale_bmi_gwas.tsv",
 	    model_file::String = "trained_model.bson",
 	    # model_file::String = "test_trained_model.bson",

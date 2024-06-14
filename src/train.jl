@@ -263,9 +263,8 @@ function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, D::
             end
 
             nn_σ2_β, nn_p_causal = predict_with_nn(trained_model, Float32.(G))
-	    println("q_μ and squared values: $(q_μ[neg_indices]), $((q_μ .^ 2)[neg_indices])")
-            println("MINIMUM nn_σ2_β AFTER TRAINING NOT NORMALIZED: $(minimum(nn_σ2_β))")
-	    @info "nn_p_causal before normalization"
+
+            @info "nn_p_causal before normalization"
             describe_vector(nn_p_causal)
 
             @info "nn_σ2_β before normalization"
