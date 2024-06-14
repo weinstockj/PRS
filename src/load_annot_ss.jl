@@ -1,16 +1,22 @@
 function load_annot_and_summary_stats(annot::String, summary_statistics::String; min_MAF=0.01)
-
-    annotation_columns = ["A_Cardiomyocyte", "Acinar", "Adipocyte", "Airway_Goblet", "Alpha_1", "Alpha_2", "Alveolar_Cap_Endo", "Alveolar_Type_1", "Alveolar_Type_2", "Alveolar_Type_2_Immune", "Astrocyte_1", "Astrocyte_2", "BBB_Endothelial", "Beta_1", "Beta_2", "Cardiac_Fibroblast", "Cardiac_Pericyte_1", "Cardiac_Pericyte_2", "Cardiac_Pericyte_3", "Cardiac_Pericyte_4", "Chief", "Cilliated", "Club", "Colon_Epithelial_1", "Colon_Epithelial_2", "Colon_Epithelial_3", "Colon_Goblet", "Cortical_Epithelial", "Delta+Gamma", "Ductal", "Endocardial", "Endothelial_Exocrine", "Endothelial_General_1", "Endothelial_General_2", "Endothelial_General_3", "Endothelial_Myocardial", "Enteric_Neuron", "Enterochromaffin", "Enterocyte", "Esophageal_Epithelial", "Fasciculata", "Fibro_Epithelial", "Fibro_General", "Fibro_GI", "Fibro_Liver_Adrenal", "Fibro_Muscle", "Fibro_Nerve", "Follicular", "Foveolar", "GABA_1", "GABA_2", "Gastric_Neuroendocrine", "Glomerulosa", "Glutamatergic_1", "Glutamatergic_2", "Hepatocyte", "Keratinocyte_1", "Keratinocyte_2", "Luteal", "Lymphatic", "Macrophage_General", "Macrophage_Gen_or_Alv", "Mammary_Basal_Epi", "Mammary_Epithelial", "Mammary_Luminal_Epi_1", "Mammary_Luminal_Epi_2", "Mast", "Melanocyte", "Memory_B", "Mesothelial", "Microglia", "Myoepithelial", "Naive_T", "Natural_Killer_T", "Nerve_Stromal", "Oligodendrocyte", "Oligo_Precursor", "Paneth", "Parietal", "Pericyte_General_1", "Pericyte_General_2", "Pericyte_General_3", "Pericyte_General_4", "Pericyte_Muscularis", "Plasma_B", "Satellite", "Schwann_General", "SI_Goblet", "Skin_Basal_Epidermal", "Skin_Eccrine_Epidermal", "Skin_Granular_Epidermal", "Sm_Ms_Colon_1", "Sm_Ms_Colon_2", "Sm_Ms_GE_junction", "Sm_Ms_General", "Sm_Ms_GI", "Sm_Ms_Mucosal", "Sm_Ms_Muscularis_1", "Sm_Ms_Muscularis_2", "Sm_Ms_Muscularis_3", "Sm_Ms_Uterine", "Sm_Ms_Vaginal", "T_Lymphocyte_1_CD8+", "T_lymphocyte_2_CD4+", "Transitional_Cortical", "Tuft", "Type_II_Skeletal_Myocyte", "Type_I_Skeletal_Myocyte", "Vasc_Sm_Muscle_1", "Vasc_Sm_Muscle_2", "V_Cardiomyocyte", "Fetal_A_Cardiomyocyte", "Fetal_Acinar_1", "Fetal_Acinar_2", "Fetal_Adrenal_Cortical", "Fetal_Adrenal_Neuron", "Fetal_Alveolar_Cap_Endo", "Fetal_Alveolar_Epithelial_1", "Fetal_Alveolar_Epithelial_2", "Fetal_Astrocyte_1", "Fetal_Astrocyte_2", "Fetal_Astrocyte_3", "Fetal_Astrocyte_4", "Fetal_Astrocyte_5", "Fetal_B_Lymphocyte_1_SPIB+", "Fetal_B_Lymphocyte_2_CXCR5+", "Fetal_B_Lymphocyte_3_NPY+", "Fetal_Cardiac_Fibroblast", "Fetal_Cholangiocyte", "Fetal_Chromaffin", "Fetal_Cilliated", "Fetal_Ductal", "Fetal_Endocardial", "Fetal_Endothelial_General_1", "Fetal_Endothelial_General_2", "Fetal_Endothelial_General_3", "Fetal_Endothelial_Hepatic_1", "Fetal_Endothelial_Hepatic_2", "Fetal_Endothelial_Placental", "Fetal_Enteric_Glia", "Fetal_Enteric_Neuron", "Fetal_Enterocyte_1", "Fetal_Enterocyte_2", "Fetal_Enterocyte_3", "Fetal_Enteroendocrine", "Fetal_Erythroblast_1", "Fetal_Erythroblast_2", "Fetal_Erythroblast_3", "Fetal_Erythroblast_4", "Fetal_Erythroblast_5", "Fetal_Excitatory_Neuron_10", "Fetal_Excitatory_Neuron_11", "Fetal_Excitatory_Neuron_12", "Fetal_Excitatory_Neuron_1", "Fetal_Excitatory_Neuron_2", "Fetal_Excitatory_Neuron_3", "Fetal_Excitatory_Neuron_4", "Fetal_Excitatory_Neuron_5", "Fetal_Excitatory_Neuron_6", "Fetal_Excitatory_Neuron_7", "Fetal_Excitatory_Neuron_8", "Fetal_Excitatory_Neuron_9", "Fetal_Extravillous_Trophoblast", "Fetal_Fibro_General_1", "Fetal_Fibro_General_2", "Fetal_Fibro_General_3", "Fetal_Fibro_General_4", "Fetal_Fibro_General_5", "Fetal_Fibro_GI", "Fetal_Fibro_Muscle_1", "Fetal_Fibro_Placental_1", "Fetal_Fibro_Placental_2", "Fetal_Fibro_Splenic", "Fetal_Gastri_Goblet", "Fetal_Goblet", "Fetal_Hematopoeitic_Stem", "Fetal_Hepatoblast", "Fetal_Inhibitory_Neuron_1", "Fetal_Inhibitory_Neuron_2", "Fetal_Inhibitory_Neuron_3", "Fetal_Inhibitory_Neuron_4", "Fetal_Inhibitory_Neuron_5", "Fetal_Islet", "Fetal_Lymphatic", "Fetal_Macrophage_General_1", "Fetal_Macrophage_General_2", "Fetal_Macrophage_General_3", "Fetal_Macrophage_General_4", "Fetal_Macrophage_Hepatic_1", "Fetal_Macrophage_Hepatic_2", "Fetal_Macrophage_Hepatic_3", "Fetal_Macrophage_Placental", "Fetal_Megakaryocyte", "Fetal_Mesangial_1", "Fetal_Mesangial_2", "Fetal_Mesothelial", "Fetal_Metanephric", "Fetal_Oligo_Progenitor_2", "Fetal_Parietal+Chief", "Fetal_Photoreceptor", "Fetal_Placental_Neuron", "Fetal_Pulmonary_Neuroendocrine", "Fetal_Retinal_Neuron", "Fetal_Retinal_Pigment", "Fetal_Retinal_Progenitor_1", "Fetal_Retinal_Progenitor_2", "Fetal_Satellite_1", "Fetal_Satellite_2", "Fetal_Schwann_General", "Fetal_Skeletal_Myocyte_1", "Fetal_Skeletal_Myocyte_2", "Fetal_Skeletal_Myocyte_3", "Fetal_Stellate", "Fetal_Sympathoblast", "Fetal_Syncitio+Cytotrophoblast", "Fetal_Thymocyte", "Fetal_T_Lymphocyte_1_CD4+", "Fetal_T_Lymphocyte_2_Cytotoxic", "Fetal_T_Lymphocyte_3_IL2+", "Fetal_T_Lymphocyte_4_FASLG+", "Fetal_Ureteric_Bud", "Fetal_V_Cardiomyocyte", "AF_ALT"]
-
+    
     unzip(a) = map(x->getfield.(a, x), fieldnames(eltype(a)))
 
-    annot = CSV.read(annot, DataFrame)
-    rename!(annot,:snp_id => :SNP)
+#    loading old annotation file (Zahng et al)
+#    annot = CSV.read(annot, DataFrame)
+#    rename!(annot,:snp_id => :SNP)
 
+    annot = DataFrame(Parquet2.Dataset(annot); copycols=false)
+    annot.ChIP = Int8.(annot[!, :ChIP])
+    annot.Chromatin_accessibility = Int8.(annot[!, :Chromatin_accessibility])
+    annot.QTL = Int8.(annot[!, :QTL])
+    annot.PWM = Int8.(annot[!, :PWM])
+    rename!(annot,:variant_id => :SNP)
+
+    annotation_columns = names(annot)
     summary_statistics = CSV.read(summary_statistics, DataFrame)
 
-    # TODO: we need to decide on a standard input format
-    required_columns = [:SNP, :AF_ALT, :MAF, :N, :BETA, :SE, :PVALUE]
+    required_columns = [:SNP, :MAF, :N, :BETA, :SE, :PVALUE]
     summary_statistics = select(summary_statistics, required_columns)
     delete!(summary_statistics, findall(nonunique(select(summary_statistics, [:SNP]))))
     summary_statistics[!, :CHR], summary_statistics[!, :BP] = unzip(extract_chr_pos.(summary_statistics[:, :SNP]))
@@ -18,8 +24,11 @@ function load_annot_and_summary_stats(annot::String, summary_statistics::String;
     summary_statistics = subset(summary_statistics, :MAF => ByRow(>=(min_MAF)))
 
     subset_annot_summary_statistics = innerjoin(annot, summary_statistics, on = [:SNP], makeunique=true)
+    annotation_columns = names(subset_annot_summary_statistics)
+    #println(annotation_columns)
+    setdiff!(annotation_columns, ["chrom", "start", "end", "SNP", "ref", "alt", "SNP","MAF", "N", "BETA", "SE", "PVALUE", "CHR", "BP"])
     annot = Matrix(select(subset_annot_summary_statistics, annotation_columns))
-    summary_statistics = select(subset_annot_summary_statistics, required_columns) 
+    summary_statistics = select(subset_annot_summary_statistics, required_columns)
     current_LD_block_positions = subset_annot_summary_statistics[:,:BP]
 
     return annot, summary_statistics, current_LD_block_positions

@@ -20,7 +20,7 @@ function log_prior(β::Vector, σ2_β::Vector, p_causal::Vector, to; spike_σ2 =
         p = p_causal[i]
         container[1] = logpdf(slab_dist[i], x) + log(p)
         container[2] = logpdf(spike_dist, x) + log(1.0 - p)
-        logprob += logsumexp(container)
+        logprob += Flux.logsumexp(container)
     end 
     
     # return @fastmath sum(logsumexp.(gen))

@@ -1,12 +1,12 @@
 """
- fit_heritability_nn(model, q_μ, q_var, q_alpha, G)
+ fit_heritability_nn(model, q_μ, q_μ_sq, q_alpha, G)
 
  Fit the heritability neural network model.
 
     # Arguments
     - `model::Chain`: A neural network model
     - `q_μ::Vector`: A length P vector of posterior means
-    - `q_var::Vector`: A length P vector of posterior variances
+    - `q_μ_sq::Vector`: A length P vector of posterior variances
     - `q_α::Vector`: A length P vector of posterior probabilities of being causal
     - `G::AbstractArray`: A P x K matrix of annotations
 
@@ -17,11 +17,11 @@
     )
 
     G = rand(Normal(0, 1), 100, 20)
-    q_var = (G * rand(Normal(0, 0.10), 20)) .^ 2
-    q_α = 1.0 ./ (1.0 .+ exp.(-1.0 .* (-2.0 .+ q_var)))
+    q_μ_sq = (G * rand(Normal(0, 0.10), 20)) .^ 2
+    q_α = 1.0 ./ (1.0 .+ exp.(-1.0 .* (-2.0 .+ q_μ_sq)))
     trained_model = PRSFNN.fit_heritability_nn(
         model, 
-        q_var, 
+        q_μ_sq, 
         q_α, 
         G
     )
@@ -30,15 +30,20 @@
     yhat[:, 2] .= 1.0 ./ (1.0 .+ exp.(-yhat[:, 2]))
 ```
 """
-function fit_heritability_nn(model, q_var, q_α, G, i=1; max_epochs=50, patience=30, mse_improvement_threshold=0.01, test_ratio=0.2, num_splits=5)
+function fit_heritability_nn(model, q_μ_sq, q_α, G, i=1; max_epochs=3000, patience=400, mse_improvement_threshold=0.01, test_ratio=0.2, num_splits=10, optim_type = AdamW(0.02))
 
     # G_standardized = standardize(G)
+
+    #λ = 1e-6
+    println("MIN FLOAT32 Q MU SQ: $(minimum(Float32.(q_μ_sq)))")
+    println("MAX FLOAT32 Q MU SQ: $(maximum(Float32.(q_μ_sq)))")
+    q_μ_sq = clamp_nn_fit_h_nn(q_μ_sq)
 
     best_ks_statistic = Inf
     best_train_data = []
     best_test_data = []
 
-    P = length(q_var)
+    P = length(q_μ_sq)
 
     for _ in 1:num_splits
         # ak: shuffle indices
@@ -49,29 +54,30 @@ function fit_heritability_nn(model, q_var, q_α, G, i=1; max_epochs=50, patience
         train_indices = permuted_indices[1:end-num_test]
         test_indices = permuted_indices[end-num_test+1:end]
 
-        # ak: get matching posterior variances in training and testing
-        train_posterior_vars = q_var[train_indices]
-        test_posterior_vars = q_var[test_indices]
-
         # ak: compute the KS statistic and pick the split with smallest KS stats
-        ks_test = ApproximateTwoSampleKSTest(train_posterior_vars, test_posterior_vars)
+        ks_test = ApproximateTwoSampleKSTest(q_α[train_indices], q_α[test_indices])
         ks_n = ks_test.n_x*ks_test.n_y/(ks_test.n_x+ks_test.n_y)
         ks_statistic = (sqrt(ks_n)*ks_test.δ)
 
         if ks_statistic < best_ks_statistic
             best_ks_statistic = ks_statistic
-            best_train_data = [Float32.(G[train_indices, :]), Float32.(q_var[train_indices]), Float32.(q_α[train_indices])]
-            best_test_data = [Float32.(G[test_indices, :]), Float32.(q_var[test_indices]), Float32.(q_α[test_indices])]
+            #best_train_data = [Float32.(G[train_indices, :]), Float32.(q_μ_sq[train_indices]), Float32.(q_α[train_indices])]
+            best_train_data = [Float32.(G[train_indices, :]), Float32.(q_μ_sq[train_indices]), Float32.(q_α[train_indices])]
+            #best_test_data = [Float32.(G[test_indices, :]), Float32.(q_μ_sq[test_indices]), Float32.(q_α[test_indices])]
+            best_test_data = [Float32.(G[test_indices, :]), Float32.(q_μ_sq[test_indices]), Float32.(q_α[test_indices])]
         end
 
     end
 
-    opt = Flux.setup(Momentum(), model)
-    data = [(
-                Float32.(best_train_data[1]), 
-                Float32.(log.(best_train_data[2])), # later apply inverse of exp.(x) 
-                Float32.(logit.(best_train_data[3])) # later apply logistic to recover orig prob
-           )]
+    opt = Flux.setup(optim_type, model)
+    X = Float32.(transpose(best_train_data[1]))
+    Y = Float32.(transpose(hcat(log.(best_train_data[2]), logit.(best_train_data[3]))))
+#    Y = Float32.(transpose(hcat(log.(best_train_data[2] .+ λ), logit.(best_train_data[3]))))
+#    Y = Float32.(transpose(hcat(log1pexp.(best_train_data[2]), logit.(best_train_data[3]))))
+    data = (X, Y)
+
+    # Main.@infiltrate
+    DL = Flux.DataLoader(data, batchsize=10, shuffle=true, rng = Random.seed!(1))
     
     best_loss = Inf
     best_model = deepcopy(model)
@@ -80,27 +86,32 @@ function fit_heritability_nn(model, q_var, q_α, G, i=1; max_epochs=50, patience
     train_losses = Float64[]
     test_losses = Float64[]
 
+    # check_no_nan(data[1])
+
+    # @show model.layers[1].weight
+    # @show model.layers[1].bias
+
     @inbounds for epoch in 1:max_epochs
-        check_no_nan(data[1])
-        train!(nn_loss, model, data, opt)
+        train!(nn_loss, model, DL, opt)
         train_loss = nn_loss(
                 model, 
-                Float32.(best_train_data[1]), 
-                Float32.(log.(best_train_data[2])), 
-                Float32.(logit.(best_train_data[3]))
+                Float32.(transpose(best_train_data[1])), 
+                Float32.(transpose(hcat(log.(best_train_data[2]), logit.(best_train_data[3]))))
+#                Float32.(transpose(hcat(log1pexp.(best_train_data[2]), logit.(best_train_data[3]))))
             )
         push!(train_losses, train_loss)
 
         # ak: validation loss
         test_loss = nn_loss(
                 model,
-                Float32.(best_test_data[1]),
-                Float32.(log.(best_test_data[2])),
-                Float32.(logit.(best_test_data[3]))
+                Float32.(transpose(best_test_data[1])),
+                Float32.(transpose(hcat(log.(best_test_data[2]), logit.(best_test_data[3]))))
+#                Float32.(transpose(hcat(log1pexp.(best_test_data[2]), logit.(best_test_data[3]))))
             )
         push!(test_losses, test_loss)
 
         mse_improvement = (test_loss - best_loss) / test_loss
+        #@info "$(ltime()) Epoch: $epoch, Train loss: $(round(train_loss, digits=2)), Test loss: $(round(test_loss, digits=2)), Relative change (ideally negative): $(round(mse_improvement; digits = 2))"
 
         # if improvement from prev iteration is greater than threshold
         if mse_improvement < -mse_improvement_threshold
@@ -124,6 +135,9 @@ function fit_heritability_nn(model, q_var, q_α, G, i=1; max_epochs=50, patience
 
     @info "$(ltime()) Best model taken from epoch $best_model_epoch."
 
+    plot_nn_loss = plot_loss_vs_epochs(train_losses, test_losses, i, best_model_epoch)
+    savefig("epoch_losses_$i.png")
+
     return best_model
 end
 
@@ -141,20 +155,46 @@ function find_max_activation(layer, K)
 end
 
 function predict_with_nn(model, G)
+    #λ = 1e-6
+    neg_indices = []
     outputs = model(transpose(G))
-    nn_σ2_β = exp.(outputs[1, :]) 
+    nn_σ2_β = exp.(outputs[1, :])
+    #nn_σ2_β = nn_σ2_β .- λ
+    #nn_σ2_β = logexpm1.(outputs[1, :])
+    if !(all(>=(0), nn_σ2_β))
+        neg_indices = findall(x->x<0, nn_σ2_β)
+	neg_outputs = outputs[1, :][neg_indices]
+	println("negative outputs: $neg_outputs")
+	println("negative nn_σ2_β: $(nn_σ2_β[neg_indices])")
+	println("indicies: $neg_indices")
+    end
     nn_p_causal = 1 ./ (1 .+ exp.(-outputs[2, :])) ## ak: logistic to recover orig prob
     return nn_σ2_β, nn_p_causal
 end
 
 # RMSE
-function nn_loss(model, x, y_slab, y_causal; weight_slab = 1.0, weight_causal = 1.0) ## ak: need two losses for slab variance and percent causal 
+function nn_loss(model, G, y; weight_slab = 1.0, weight_causal = 1.0) ## ak: need two losses for slab variance and percent causal 
 
-    yhat = model(transpose(x))
-    loss_slab = @views Flux.mse(yhat[1, :], y_slab)
+    yhat = model(G)
+    loss_slab = @views Flux.mse(yhat[1, :], y[1, :])
     weighted_loss_slab = weight_slab * loss_slab
-    loss_causal = @views Flux.mse(yhat[2, :], y_causal)
+    loss_causal = @views Flux.mse(yhat[2, :], y[2, :])
     weighted_loss_causal = weight_causal * loss_causal
     total_loss = weighted_loss_slab + weighted_loss_causal ## ak: losses summed to form the total loss for training
     return total_loss
+end
+
+# function nn_loss(model, batch; weight_slab = 1.0, weight_causal = 1.0) ## ak: need two losses for slab variance and percent causal 
+
+#     @show batch 
+#     G = batch[1]
+#     y = batch[2]
+
+#     return nn_loss(model, G, y; weight_slab = weight_slab, weight_causal = weight_causal)
+# end
+
+function plot_loss_vs_epochs(train_losses, test_losses, i, epoch_model_taken)
+    plot(1:length(train_losses), train_losses, xlabel="Epochs", ylabel="Loss", label="train", title="Loss vs. Epochs, iteration $i, best at $epoch_model_taken", reuse=false)
+    plot!(1:length(test_losses), test_losses, lc=:orange, label="test")
+    vline!([epoch_model_taken], label="epoch of best")
 end

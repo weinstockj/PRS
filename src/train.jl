@@ -141,8 +141,7 @@ end
     - `G::AbstractArray`: A P x K matrix of annotations
     
 """
-function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, D::Vector, G::AbstractArray; model = model, max_iter = 5, threshold = 2, train_nn = true, N = 10_000) 
-#function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, D::Vector, G::AbstractArray; model = model, max_iter = 5, threshold = 0.2, train_nn = true, N = 10_000) 
+function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, D::Vector, G::AbstractArray; model = model, max_iter = 4, threshold = 0.2, train_nn = true, N = 10_000) 
 
     to = TimerOutput()
     ## initialize
@@ -151,7 +150,7 @@ function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, D::
         P = length(coef)
         q_μ = zeros(P)
         q_α = ones(P) .* 0.01
-        L = sum(q_α)
+        # L = sum(q_α)
         q_var = ones(P) * 0.001
 
         cavi_q_μ = copy(q_μ) # zeros(P)
@@ -159,6 +158,7 @@ function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, D::
         cavi_q_α = copy(q_α) # ones(P) .* 0.10
 
         X_sd = sqrt.(D ./ N)
+
 
         @timeit to "inferring σ2" σ2, R2, yty = infer_σ2(coef, SE, R, D, X_sd, median(N), P)
         @info "$(ltime()) Estimated σ2 = $(round(σ2; digits = 2)), h2 = $(round(R2; digits = 2))"
@@ -217,7 +217,9 @@ function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, D::
         # check for convergence
         @info "$(ltime()) ELBO = $(round(loss; digits = 2)), previous ELBO = $(round(prev_loss; digits = 1)), ELBO SE = $(round(loss_se; digits = 1)), threshold = $(round(threshold; digits = 2))"
 
-        if (loss - prev_loss) / loss_se < threshold
+        println("IMPROVEMENT FROM PREV ITERATION: $((loss - prev_loss) / loss_se)")
+
+	if (loss - prev_loss) / loss_se < threshold
             @info "$(ltime()) ELBO did not increase by the required amount; breaking now"
             break 
         end
@@ -230,9 +232,23 @@ function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, D::
         prev_loss = copy(loss)
 
         ## ak: Set α(i) =α and μ(i) =μ
+        L = sum(q_α)
         cavi_q_μ = copy(q_μ)
         cavi_q_α = copy(q_α)
         cavi_q_var = copy(q_var)
+        cavi_q_marginal_var = compute_marginal_variance(q_μ, q_var, q_α)
+
+        @info "q_μ"
+        describe_vector(q_μ)
+
+        @info "q_μ ^ 2"
+        describe_vector(q_μ .^ 2)
+
+        @info "$(ltime()) sum(q_α) = $(round(sum(q_α), digits = 2)), sum(cavi_q_marginal_var) = $(round(sum(q_var), digits = 2)), std(q_μ) = $(round(std(q_μ), digits = 2))"
+        @info "$(ltime()) Inferred $(round(sum(cavi_q_α .> .50), digits = 2)) variants with PIP >= 50%"
+        println(findmax(abs.(q_μ)))
+
+        # Main.@infiltrate
 
         if any(cavi_q_var .< 0)
             error("cavi_q_var has neg value")
@@ -241,13 +257,26 @@ function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, D::
         if train_nn
             # train the neural network using G and the new s and p_causal
             @timeit to "fit_heritability_nn" begin
-                model = fit_heritability_nn(model, q_var, q_α, G, i) #*#
+                # model = fit_heritability_nn(model, q_var, q_α, G, i) #*#
+                model = fit_heritability_nn(model, q_μ .^ 2, q_α, G, i) #*#
                 trained_model = deepcopy(model)
             end
 
             nn_σ2_β, nn_p_causal = predict_with_nn(trained_model, Float32.(G))
-            @debug "$(ltime()) mean nn_p_causal = $(mean(nn_p_causal))"
-            nn_p_causal = nn_p_causal .* L ./ sum(nn_p_causal)
+	    println("q_μ and squared values: $(q_μ[neg_indices]), $((q_μ .^ 2)[neg_indices])")
+            println("MINIMUM nn_σ2_β AFTER TRAINING NOT NORMALIZED: $(minimum(nn_σ2_β))")
+	    @info "nn_p_causal before normalization"
+            describe_vector(nn_p_causal)
+
+            @info "nn_σ2_β before normalization"
+            describe_vector(nn_σ2_β)
+            # Main.@infiltrate
+            # nn_p_causal = nn_p_causal .* L ./ sum(nn_p_causal)
+            nn_σ2_β = nn_σ2_β .* (.001 * P) ./ sum(nn_σ2_β)
+            # @info "nn_p_causal after normalization"
+            describe_vector(nn_p_causal)
+            @info "nn_σ2_β after normalization"
+            describe_vector(nn_σ2_β)
 
             @timeit to "deepcopys" begin
                 prev_model = deepcopy(model) #at iter 1, trained nn model
@@ -255,11 +284,24 @@ function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, D::
         end
     end
 
+
+    @info "$(ltime()) Inferred $(round(sum(cavi_q_α .> .50), digits = 2)) variants with PIP >= 50%"
     show(to)
+
+    @info "$(ltime()) Training finished"
 
     if train_nn
         return cavi_q_μ, cavi_q_α, cavi_q_var, prev_model
     else
         return cavi_q_μ, cavi_q_α, cavi_q_var, model
     end
+end
+
+function describe_vector(x::Vector, digits = 4)
+    @info "mean = $(round(mean(x); digits = digits)), std = $(round(std(x); digits = digits)), min = $(round(minimum(x); digits = digits)), max = $(round(maximum(x); digits = digits)), sum = $(round(sum(x); digits = digits))"
+    # println(x[1:5])
+end
+
+function compute_marginal_variance(q_μ, q_var, p_slab = 0.01, spike_σ2 = 1e-8)
+    return p_slab .* q_var .+ (1 .- p_slab) .* spike_σ2 .+ (p_slab .* q_μ .^ 2 .- (p_slab .* q_μ) .^ 2)
 end

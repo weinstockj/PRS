@@ -22,6 +22,9 @@ using TimerOutputs
 using BSON
 using BSON: @load, @save
 using LinearSolve
+using Plots
+using StatsFuns
+using Parquet2
 
 # include in logging call, e.g., @info "$(ltime()) message"
 function ltime()
