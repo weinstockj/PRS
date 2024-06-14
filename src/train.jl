@@ -141,7 +141,7 @@ end
     - `G::AbstractArray`: A P x K matrix of annotations
     
 """
-function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, D::Vector, G::AbstractArray; model = model, max_iter = 4, threshold = 0.2, train_nn = true, N = 10_000) 
+function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, D::Vector, G::AbstractArray; model = model, opt = opt, max_iter = 4, threshold = 0.2, train_nn = true, N = 10_000) 
 
     to = TimerOutput()
     ## initialize
@@ -211,13 +211,13 @@ function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, D::
         end
 
         if i >= 2
-            @info "$(ltime()) difference from n, n-1 (%) = $(round(100 * (loss - prev_loss) / abs(prev_loss); digits = 1))%"
+            @info "$(ltime()) difference from n, n-1 (%) = $(round(100 * (loss - prev_loss) / abs(prev_loss); digits = 2))%"
         end
 
         # check for convergence
         @info "$(ltime()) ELBO = $(round(loss; digits = 2)), previous ELBO = $(round(prev_loss; digits = 1)), ELBO SE = $(round(loss_se; digits = 1)), threshold = $(round(threshold; digits = 2))"
 
-        println("IMPROVEMENT FROM PREV ITERATION: $((loss - prev_loss) / loss_se)")
+        # println("IMPROVEMENT FROM PREV ITERATION: $((loss - prev_loss) / loss_se)")
 
 	if (loss - prev_loss) / loss_se < threshold
             @info "$(ltime()) ELBO did not increase by the required amount; breaking now"
@@ -248,17 +248,12 @@ function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, D::
         @info "$(ltime()) Inferred $(round(sum(cavi_q_α .> .50), digits = 2)) variants with PIP >= 50%"
         println(findmax(abs.(q_μ)))
 
-        # Main.@infiltrate
 
-        if any(cavi_q_var .< 0)
-            error("cavi_q_var has neg value")
-        end
-
-        if train_nn
+        if train_nn & (sum(cavi_q_α .> .50) >= 20)
             # train the neural network using G and the new s and p_causal
             @timeit to "fit_heritability_nn" begin
                 # model = fit_heritability_nn(model, q_var, q_α, G, i) #*#
-                model = fit_heritability_nn(model, q_μ .^ 2, q_α, G, i) #*#
+                model = fit_heritability_nn(model, opt, q_μ .^ 2, q_α, G, i) #*#
                 trained_model = deepcopy(model)
             end
 

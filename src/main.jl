@@ -13,13 +13,11 @@ This function defines the command line interface for the PRSFNN package.
 """
 
 @main function main(block::String = "chr18_59047676_60426196", #"chr2_10560_1415211", 
-            #gwas_data_path::String = "/data/abattle4/april/hi_julia/annotations/ccre/celltypes", 
             annot_data_path::String = "/data/abattle4/jweins17/annotations/output", 
             ld_panel_path::String = "/data/abattle4/jweins17/LD_REF_PANEL/output/bcf",
 
 	    gwas_file_name::String = "neale_bmi_gwas.tsv",
 	    model_file::String = "trained_model.bson",
-	    # model_file::String = "test_trained_model.bson",
             betas_output_file::String = "PRSFNN_out.tsv", interpretation_output_file::String = "nn_interpretation.tsv"; min_MAF = 0.01, train_nn = true, H = 5, max_iter = 5)
 
     @info "$(ltime()) Current block: $block"
@@ -35,7 +33,7 @@ This function defines the command line interface for the PRSFNN package.
     SNPs_count = size(annotations, 1)
     @info "$(ltime()) Number of SNPs in block: $SNPs_count"
     if isfile(model_file)
-        @load model_file model
+        @load model_file model opt
     else
         @info "$(ltime()) $model_file not found, creating new model!"
         # File doesn't exist, create a new model
@@ -43,6 +41,8 @@ This function defines the command line interface for the PRSFNN package.
         layer_1 = Dense(K => H, relu; init = Flux.glorot_normal(gain = 0.0001))
         layer_output = Dense(H => 2)
         model = Chain(layer_1, layer_output)
+        optim_type = AdamW(0.02)
+        opt = Flux.setup(optim_type, model)
     end
 
     mkpath(joinpath("data", block))
@@ -61,19 +61,20 @@ This function defines the command line interface for the PRSFNN package.
         D, # already filtered for good variants
         annotations[good_variants, :],
         model = model,
+        opt = opt,
         N = summary_stats.N[good_variants],
         train_nn = train_nn,
         max_iter = max_iter
     )
 
-    open(betas_output_file, "w") do io
-        write(io, "variant\tmu\talpha\tvar\tss_beta\n")
-        writedlm(io, [summary_stats.SNP[good_variants] PRS[1] PRS[2] PRS[3] summary_stats.BETA[good_variants]], "\t")
-    end
+    # open(betas_output_file, "w") do io
+    #     write(io, "variant\tmu\talpha\tvar\tss_beta\n")
+    #     writedlm(io, [summary_stats.SNP[good_variants] PRS[1] PRS[2] PRS[3] summary_stats.BETA[good_variants]], "\t")
+    # end
 
     if train_nn
         model = PRS[4]
-        @save model_file model
+        @save model_file model opt
     end
 
     effects = interpret_model(
@@ -108,7 +109,7 @@ function interpret_model(block = "chr18_59047676_60426196", model_file = "/data/
 		min_MAF = min_MAF
             )
 
-    @load model_file model
+    @load model_file model opt
     nn_σ2_β, nn_p_causal = predict_with_nn(model, annotations)
 
     max_p_causal_index = argmax(nn_p_causal)

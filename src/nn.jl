@@ -30,14 +30,14 @@
     yhat[:, 2] .= 1.0 ./ (1.0 .+ exp.(-yhat[:, 2]))
 ```
 """
-function fit_heritability_nn(model, q_μ_sq, q_α, G, i=1; max_epochs=3000, patience=400, mse_improvement_threshold=0.01, test_ratio=0.2, num_splits=10, optim_type = AdamW(0.02))
+function fit_heritability_nn(model, opt, q_μ_sq, q_α, G, i=1; max_epochs=3000, patience=400, mse_improvement_threshold=0.01, test_ratio=0.2, num_splits=10)
 
 
     # G_standardized = standardize(G)
 
     #λ = 1e-6
-    println("MIN FLOAT32 Q MU SQ: $(minimum(Float32.(q_μ_sq)))")
-    println("MAX FLOAT32 Q MU SQ: $(maximum(Float32.(q_μ_sq)))")
+    @info "$(ltime()) MIN FLOAT32 Q MU SQ: $(minimum(Float32.(q_μ_sq)))"
+    @info "$(ltime()) MAX FLOAT32 Q MU SQ: $(maximum(Float32.(q_μ_sq)))"
     q_μ_sq = clamp_nn_fit_h_nn(q_μ_sq)
 
     best_ks_statistic = Inf
@@ -70,7 +70,6 @@ function fit_heritability_nn(model, q_μ_sq, q_α, G, i=1; max_epochs=3000, pati
 
     end
 
-    opt = Flux.setup(optim_type, model)
     X = Float32.(transpose(best_train_data[1]))
     Y = Float32.(transpose(hcat(log.(best_train_data[2]), logit.(best_train_data[3]))))
 
@@ -134,8 +133,8 @@ function fit_heritability_nn(model, q_μ_sq, q_α, G, i=1; max_epochs=3000, pati
 
     @info "$(ltime()) Best model taken from epoch $best_model_epoch."
 
-    plot_nn_loss = plot_loss_vs_epochs(train_losses, test_losses, i, best_model_epoch)
-    savefig("epoch_losses_$i.png")
+    # plot_nn_loss = plot_loss_vs_epochs(train_losses, test_losses, i, best_model_epoch)
+    # savefig("epoch_losses_$i.png")
 
     return best_model
 end
@@ -192,9 +191,9 @@ end
 #     return nn_loss(model, G, y; weight_slab = weight_slab, weight_causal = weight_causal)
 # end
 
-function plot_loss_vs_epochs(train_losses, test_losses, i, epoch_model_taken)
-    plot(1:length(train_losses), train_losses, xlabel="Epochs", ylabel="Loss", label="train", title="Loss vs. Epochs, iteration $i, best at $epoch_model_taken", reuse=false)
-    plot!(1:length(test_losses), test_losses, lc=:orange, label="test")
-    vline!([epoch_model_taken], label="epoch of best")
-end
+# function plot_loss_vs_epochs(train_losses, test_losses, i, epoch_model_taken)
+#     plot(1:length(train_losses), train_losses, xlabel="Epochs", ylabel="Loss", label="train", title="Loss vs. Epochs, iteration $i, best at $epoch_model_taken", reuse=false)
+#     plot!(1:length(test_losses), test_losses, lc=:orange, label="test")
+#     vline!([epoch_model_taken], label="epoch of best")
+# end
 

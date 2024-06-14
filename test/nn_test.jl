@@ -2,10 +2,13 @@ function test_long_nn()
     P = 500
     K = 20
 
-    model = Chain(
-            Dense(K => 3, relu; init = Flux.glorot_normal(gain = 0.0001)),
-            Dense(3 => 2)
-    )
+    # model = Chain(
+    #         Dense(K => 3, relu; init = Flux.glorot_normal(gain = 0.0001)),
+    #         Dense(3 => 2)
+    # )
+    model = Chain(Dense(K => 3, relu), Dense(3 => 2))
+    optim_type = AdamW(0.02)
+    opt = Flux.setup(optim_type, model)
 
     G = rand(Normal(0, 1), P, K)
     β = rand(Normal(0, 0.3), K)
@@ -18,14 +21,13 @@ function test_long_nn()
 
     trained_model = PRSFNN.fit_heritability_nn(
             model, 
+            opt,
             q_var, 
             q_α, 
             G;
             max_epochs = 4000,
             patience = 400,
-            mse_improvement_threshold = 0.01,
-            # optim_type = Momentum(0.01, 0.9)
-            optim_type = AdamW(0.02)
+            mse_improvement_threshold = 0.01
     )
 
     yhat = transpose(trained_model(transpose(G)))
