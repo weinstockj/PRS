@@ -22,8 +22,9 @@ using TimerOutputs
 using BSON
 using BSON: @load, @save
 using LinearSolve
-using Plots
+# using Plots
 using StatsFuns
+using LogExpFunctions
 using Parquet2
 
 # include in logging call, e.g., @info "$(ltime()) message"
@@ -41,7 +42,7 @@ include("load_annot_ss.jl")
 include("utils.jl")
 include("nn.jl")
 
-export joint_lob_prob, RSS, elbo, train_until_convergence
+export joint_lob_prob, RSS, elbo, train_until_convergence, main
 
 # speed up precompilation for end users
 #@precompile_setup begin
