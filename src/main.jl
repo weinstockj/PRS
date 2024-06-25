@@ -39,7 +39,7 @@ This function defines the command line interface for the PRSFNN package.
         @info "$(ltime()) $model_file not found, creating new model!"
         # File doesn't exist, create a new model
         K = size(annotations, 2)
-        layer_1 = Dense(K => H, softplus; init = Flux.glorot_normal(gain = 0.005))
+        layer_1 = Dense(K => H, Flux.softplus; init = Flux.glorot_normal(gain = 0.005))
         layer_output = Dense(H => 2)
         layer_output.bias .= [StatsFuns.log(0.0001), StatsFuns.logit(0.01)]
         model = Chain(layer_1, layer_output)
