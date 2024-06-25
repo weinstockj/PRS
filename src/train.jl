@@ -41,7 +41,7 @@ function train_cavi(p_causal, σ2_β, X_sd, i_iter, coef, SE, R, D, to; P = 1_00
         @timeit to "elbo estimate" begin
             @inbounds for z in 1:n_elbo
                 z = rand(Normal(0, 1), P)
-                push!(elbo_loss, elbo(z, q_μ, log.(q_var), coef, Σ_reg, SRSinv, σ2_β, p_causal, to))
+                push!(elbo_loss, elbo(z, q_μ, log.(q_var), coef, Σ_reg, SRSinv, σ2_β, p_causal, σ2, to))
             end
         end
      
@@ -160,12 +160,12 @@ function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, D::
         X_sd = sqrt.(D ./ N)
 
 
-        @timeit to "inferring σ2" σ2, R2, yty = infer_σ2(coef, SE, R, D, X_sd, median(N), P)
+        @timeit to "inferring σ2" σ2, R2, yty = infer_σ2(coef, SE, R, D, X_sd, median(N), P; estimate = true)
         @info "$(ltime()) Estimated σ2 = $(round(σ2; digits = 2)), h2 = $(round(R2; digits = 2))"
 
         if train_nn
             nn_p_causal = 0.01 * ones(P)
-            nn_σ2_β = 0.001 * ones(P)
+            nn_σ2_β = σ2 * 0.001 * ones(P)
         else
             @info "$(ltime()) Resetting max_iter from $max_iter to 1 because the nn is frozen"
             nn_σ2_β, nn_p_causal = predict_with_nn(model, Float32.(G))
@@ -238,11 +238,11 @@ function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, D::
         cavi_q_var = copy(q_var)
         cavi_q_marginal_var = compute_marginal_variance(q_μ, q_var, q_α)
 
-        @info "q_μ"
-        describe_vector(q_μ)
+        @info "q_μ / sqrt(σ2)"
+        describe_vector(q_μ ./ sqrt(σ2))
 
-        @info "q_μ ^ 2"
-        describe_vector(q_μ .^ 2)
+        @info "q_μ ^ 2 / σ2"
+        describe_vector(q_μ .^ 2 / σ2)
 
         @info "$(ltime()) sum(q_α) = $(round(sum(q_α), digits = 2)), sum(cavi_q_marginal_var) = $(round(sum(q_var), digits = 2)), std(q_μ) = $(round(std(q_μ), digits = 2))"
         @info "$(ltime()) Inferred $(round(sum(cavi_q_α .> .50), digits = 2)) variants with PIP >= 50%"
@@ -254,18 +254,18 @@ function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, D::
             # train the neural network using G and the new s and p_causal
             @timeit to "fit_heritability_nn" begin
                 # model = fit_heritability_nn(model, q_var, q_α, G, i) #*#
-                model = fit_heritability_nn(model, opt, q_μ .^ 2, q_α, G, i) #*#
+                model = fit_heritability_nn(model, opt, q_μ .^ 2 / σ2, q_α, G, i) #*#
                 trained_model = deepcopy(model)
             end
 
             nn_σ2_β, nn_p_causal = predict_with_nn(trained_model, Float32.(G))
             # Main.@infiltrate
 
-            # @info "nn_p_causal before normalization"
-            # describe_vector(nn_p_causal)
+            @info "nn_p_causal before normalization"
+            describe_vector(nn_p_causal)
 
-            # @info "nn_σ2_β before normalization"
-            # describe_vector(nn_σ2_β)
+            @info "nn_σ2_β before normalization"
+            describe_vector(nn_σ2_β)
             # # Main.@infiltrate
             # # nn_p_causal = nn_p_causal .* L ./ sum(nn_p_causal)
             # nn_σ2_β = nn_σ2_β .* (.001 * P) ./ sum(nn_σ2_β)

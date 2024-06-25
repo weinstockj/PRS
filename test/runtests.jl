@@ -6,6 +6,7 @@ using TimerOutputs
 using PDMats
 using LinearAlgebra
 using Flux
+using StatsFuns
 
 
 function test_rss_elbo()
@@ -20,6 +21,7 @@ function test_rss_elbo()
 
     σ2_β = [0.01, 0.01, 0.01]
     p_causal = [0.10, 0.10, 0.10]
+    σ2 = 1.0
 
     @test abs(
             rss(
@@ -38,6 +40,7 @@ function test_rss_elbo()
         SRSinv,
         σ2_β,
         p_causal,
+        σ2,
         TimerOutput()
     ) - 3.792569404258637) < .0001
 
@@ -45,6 +48,7 @@ function test_rss_elbo()
                 β,
                 σ2_β,
                 p_causal,
+                σ2,
                 TimerOutput()
             ) - -2.758314098116269) < .0001
 end
@@ -53,7 +57,7 @@ end
 function test_complete_run()
     K = 100
     H = 5
-    layer_1 = Dense(K => H, softplus; init = Flux.glorot_normal(gain = 0.001))
+    layer_1 = Dense(K => H, Flux.softplus; init = Flux.glorot_normal(gain = 0.005))
     layer_output = Dense(H => 2)
     layer_output.bias .= [StatsFuns.log(0.0001), StatsFuns.logit(0.005)]
     model = Chain(layer_1, layer_output)
@@ -81,7 +85,7 @@ function test_nn()
     K = 50
     H = 5
 
-    layer_1 = Dense(K => H, softplus; init = Flux.glorot_normal(gain = 0.001))
+    layer_1 = Dense(K => H, Flux.softplus; init = Flux.glorot_normal(gain = 0.001))
     layer_output = Dense(H => 2)
     layer_output.bias .= [StatsFuns.log(0.0001), StatsFuns.logit(0.005)]
     model = Chain(layer_1, layer_output)
@@ -91,7 +95,7 @@ function test_nn()
     G = rand(Normal(0, 1), P, K)
 
     q_var = 0.1 .* exp.((G * rand(Normal(0, 0.3), K))) 
-    q_α = 1.0 ./ (1.0 .+ exp.(-1.0 .* (-2.0 .+ q_var)))
+    q_α = Flux.σ(-2.0 .+ q_var)
 
     trained_model = fit_heritability_nn(
             model, 
@@ -104,7 +108,7 @@ function test_nn()
 
     yhat = transpose(trained_model(Float32.(transpose(G))))
     yhat[:, 1] .= exp.(yhat[:, 1])
-    yhat[:, 2] .= 1.0 ./ (1.0 .+ exp.(-yhat[:, 2]))
+    yhat[:, 2] .= Flux.σ(yhat[:, 2])
 
     @test cor(yhat[:, 1], q_var) >= .70
     @test cor(yhat[:, 2], q_α) >= .70
