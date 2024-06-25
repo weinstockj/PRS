@@ -7,11 +7,11 @@ end
     log_prior(β, σ2_β, p_causal)
     Calculates the log density of β based on a spike and slab prior
 """
-function log_prior(β::Vector, σ2_β::Vector, p_causal::Vector, to; spike_σ2 = 1e-8)
+function log_prior(β::Vector, σ2_β::Vector, p_causal::Vector, σ2::Real, to; spike_σ2 = 1e-8)
 
     P = length(β)
-    slab_dist = Normal.(0, sqrt.(σ2_β .+ spike_σ2))
-    spike_dist = Normal(0, sqrt(spike_σ2))
+    slab_dist = Normal.(0, sqrt(σ2) .* sqrt.(σ2_β .+ spike_σ2))
+    spike_dist = Normal(0, sqrt(σ2) .* sqrt(spike_σ2))
     # gen = ([logpdf(slab_dist[i], β[i]) + log(p_causal[i]), logpdf(spike_dist, β[i]) + log(1.0 - p_causal[i])] for i in 1:P)
     logprob = 0.0 
     container = zeros(2)
@@ -91,9 +91,9 @@ joint_log_prob(
 )
 ```
 """
-joint_log_prob(β::Vector, coef::Vector, SE::Vector, R::Matrix, σ2_β::Vector, p_causal::Vector, to) = rss(β, coef, SE, R, to) + log_prior(β, σ2_β, p_causal, to)
+joint_log_prob(β::Vector, coef::Vector, SE::Vector, R::Matrix, σ2_β::Vector, p_causal::Vector, σ2::Real, to) = rss(β, coef, SE, R, to) + log_prior(β, σ2_β, p_causal, σ2, to)
 
-joint_log_prob(β::Vector, coef::Vector, Σ::AbstractPDMat, SRSinv::Matrix, σ2_β::Vector, p_causal::Vector, to) = rss(β, coef, Σ, SRSinv, to) + log_prior(β, σ2_β, p_causal, to)
+joint_log_prob(β::Vector, coef::Vector, Σ::AbstractPDMat, SRSinv::Matrix, σ2_β::Vector, p_causal::Vector, σ2::Real, to) = rss(β, coef, Σ, SRSinv, to) + log_prior(β, σ2_β, p_causal, σ2, to)
 
 """
     elbo(z, q_μ, log_q_var, coef, SE, R, σ2_β, p_causal)
@@ -112,27 +112,27 @@ elbo(
 )
 ```
 """
-function elbo(z::Vector, q_μ::Vector, log_q_var::Vector, coef::Vector, SE::Vector, R::AbstractArray, σ2_β::Vector, p_causal::Vector, to)
+function elbo(z::Vector, q_μ::Vector, log_q_var::Vector, coef::Vector, SE::Vector, R::AbstractArray, σ2_β::Vector, p_causal::Vector, σ2::Real, to)
     q_var = @timeit to "q_var" exp.(log_q_var)
     q = @timeit to "q" MvNormal(q_μ, Diagonal(q_var))
     q_sd = @timeit to "q_sd" sqrt.(q_var)
     ϕ = @timeit to "ϕ" q_μ .+ q_sd .* z
     # γ = compute_γ(q_μ, q_var)   
     # jl =  joint_log_prob(γ .* ϕ, coef, SE, R) 
-    jl =  @timeit to "joint_log_prob" joint_log_prob(ϕ, coef, SE, R, σ2_β, p_causal, to) 
+    jl =  @timeit to "joint_log_prob" joint_log_prob(ϕ, coef, SE, R, σ2_β, p_causal, σ2, to) 
     q = @timeit to "logpd" logpdf(q, ϕ)
     # jac = prod(z)
     return (jl - q)
 end
 
-function elbo(z::Vector, q_μ::Vector, log_q_var::Vector, coef::Vector, Σ::AbstractPDMat, SRSinv::Matrix, σ2_β::Vector, p_causal::Vector, to)
+function elbo(z::Vector, q_μ::Vector, log_q_var::Vector, coef::Vector, Σ::AbstractPDMat, SRSinv::Matrix, σ2_β::Vector, p_causal::Vector, σ2::Real, to)
     q_var = @timeit to "q_var" exp.(log_q_var)
     q = @timeit to "q" MvNormal(q_μ, Diagonal(q_var))
     q_sd = @timeit to "q_sd" sqrt.(q_var)
     ϕ = @timeit to "ϕ" q_μ .+ q_sd .* z
     # γ = compute_γ(q_μ, q_var)   
     # jl =  joint_log_prob(γ .* ϕ, coef, SE, R) 
-    jl =  @timeit to "joint_log_prob" joint_log_prob(ϕ, coef, Σ, SRSinv, σ2_β, p_causal, to) 
+    jl =  @timeit to "joint_log_prob" joint_log_prob(ϕ, coef, Σ, SRSinv, σ2_β, p_causal, σ2, to) 
     q = @timeit to "logpd" logpdf(q, ϕ)
     # jac = prod(z)
     return (jl - q)
@@ -148,6 +148,4 @@ function compute_γ(q_μ, q_var; slab_σ = sqrt(0.10 / 10 + 1e-6), p_causal = 0.
     
     return γ
 end
-
-σ(x) = 1.0 ./ (1.0 .+ exp.(-1.0 .* x))
 
