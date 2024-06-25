@@ -30,12 +30,14 @@
     yhat[:, 2] .= 1.0 ./ (1.0 .+ exp.(-yhat[:, 2]))
 ```
 """
-function fit_heritability_nn(model, opt, q_μ_sq, q_α, G, i=1; max_epochs=3000, patience=400, mse_improvement_threshold=0.01, test_ratio=0.2, num_splits=10)
+function fit_heritability_nn(model, opt, q_μ_sq, q_α, G, i=1; max_epochs=3000, patience=400, mse_improvement_threshold=0.01, test_ratio=0.2, num_splits=10, learning_rate_decay = 0.95)
 
 
     # G_standardized = standardize(G)
 
     #λ = 1e-6
+    println("----------------------------------------------------------------")
+    @info "$(ltime()) Now training the neural network"
     @info "$(ltime()) MIN FLOAT32 Q MU SQ: $(minimum(Float32.(q_μ_sq)))"
     @info "$(ltime()) MAX FLOAT32 Q MU SQ: $(maximum(Float32.(q_μ_sq)))"
     q_μ_sq = clamp_nn_fit_h_nn(q_μ_sq)
@@ -76,7 +78,8 @@ function fit_heritability_nn(model, opt, q_μ_sq, q_α, G, i=1; max_epochs=3000,
     data = (X, Y)
 
     # Main.@infiltrate
-    DL = Flux.DataLoader(data, batchsize=10, shuffle=true, rng = Random.seed!(1))
+    # DL = Flux.DataLoader(data, batchsize=10, shuffle=true, rng = Random.seed!(1))
+    DL = Flux.DataLoader(data, batchsize=10, shuffle=true)
     
     best_loss = Inf
     best_model = deepcopy(model)
@@ -109,7 +112,9 @@ function fit_heritability_nn(model, opt, q_μ_sq, q_α, G, i=1; max_epochs=3000,
 
         mse_improvement = (test_loss - best_loss) / test_loss
 
-        @info "$(ltime()) Epoch: $epoch, Train loss: $(round(train_loss, digits=2)), Test loss: $(round(test_loss, digits=2)), Relative change (ideally negative): $(round(mse_improvement; digits = 2))"
+        if epoch % 50 == 0
+            @info "$(ltime()) Epoch: $epoch, Train loss: $(round(train_loss, digits=3)), Test loss: $(round(test_loss, digits=3)), Relative change (ideally negative): $(round(mse_improvement; digits = 3))"
+        end
 
         # if improvement from prev iteration is greater than threshold
         if mse_improvement < -mse_improvement_threshold
@@ -121,17 +126,21 @@ function fit_heritability_nn(model, opt, q_μ_sq, q_α, G, i=1; max_epochs=3000,
             best_model = deepcopy(model)
         else
             count_since_best += 1
+            # @info "$(ltime()) Reducing learning rate to $(round(opt.layers[1].weight.rule.opts[1].eta * learning_rate_decay, digits = 5))"
+            Flux.adjust!(opt, opt.layers[1].weight.rule.opts[1].eta * learning_rate_decay)
         end
 
         # If no improvement for "patience" epochs, stop training
         if count_since_best >= patience
-            @info "$(ltime()) Early stopping after $epoch epochs."
+            @info "$(ltime()) Early stopping after $epoch epochs. Now setting learning rate to 0.005"
+            Flux.adjust!(opt, 0.005)
             break
         end
 
     end
 
-    @info "$(ltime()) Best model taken from epoch $best_model_epoch."
+    @info "$(ltime()) Done training. Best model taken from epoch $best_model_epoch."
+    println("----------------------------------------------------------------")
 
     # plot_nn_loss = plot_loss_vs_epochs(train_losses, test_losses, i, best_model_epoch)
     # savefig("epoch_losses_$i.png")
@@ -159,14 +168,14 @@ function predict_with_nn(model, G)
     nn_σ2_β = exp.(outputs[1, :])
     #nn_σ2_β = nn_σ2_β .- λ
     #nn_σ2_β = logexpm1.(outputs[1, :])
-    if !(all(>=(0), nn_σ2_β))
-        neg_indices = findall(x->x<0, nn_σ2_β)
-	neg_outputs = outputs[1, :][neg_indices]
-	println("negative outputs: $neg_outputs")
-	println("negative nn_σ2_β: $(nn_σ2_β[neg_indices])")
-	println("indicies: $neg_indices")
-    end
-    nn_p_causal = 1 ./ (1 .+ exp.(-outputs[2, :])) ## ak: logistic to recover orig prob
+    # if !(all(>=(0), nn_σ2_β))
+    #     neg_indices = findall(x->x<0, nn_σ2_β)
+	# neg_outputs = outputs[1, :][neg_indices]
+	# println("negative outputs: $neg_outputs")
+	# println("negative nn_σ2_β: $(nn_σ2_β[neg_indices])")
+	# println("indicies: $neg_indices")
+    # end
+    nn_p_causal = Flux.σ.(outputs[2, :]) 
     return nn_σ2_β, nn_p_causal
 end
 
