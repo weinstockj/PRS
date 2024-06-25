@@ -12,12 +12,13 @@ This function defines the command line interface for the PRSFNN package.
 
 """
 
-@main function main(block::String = "chr18_59047676_60426196", #"chr2_10560_1415211", 
+@main function main(block::String = "chr13_110581699_111677479", #"chr2_10560_1415211", 
             annot_data_path::String = "/data/abattle4/jweins17/annotations/output", 
             ld_panel_path::String = "/data/abattle4/jweins17/LD_REF_PANEL/output/bcf",
 
 	    gwas_file_name::String = "neale_bmi_gwas.tsv",
 	    model_file::String = "trained_model.bson",
+	    # model_file::String = "/data/abattle4/april/hi_julia/prs_benchmark/prsfnn/jun14_save_model_and_opt_state/output/chr13/trained_model.bson",
             betas_output_file::String = "PRSFNN_out.tsv", interpretation_output_file::String = "nn_interpretation.tsv"; min_MAF = 0.01, train_nn = true, H = 5, max_iter = 5)
 
     @info "$(ltime()) Current block: $block"
@@ -38,8 +39,9 @@ This function defines the command line interface for the PRSFNN package.
         @info "$(ltime()) $model_file not found, creating new model!"
         # File doesn't exist, create a new model
         K = size(annotations, 2)
-        layer_1 = Dense(K => H, relu; init = Flux.glorot_normal(gain = 0.0001))
+        layer_1 = Dense(K => H, softplus; init = Flux.glorot_normal(gain = 0.005))
         layer_output = Dense(H => 2)
+        layer_output.bias .= [StatsFuns.log(0.0001), StatsFuns.logit(0.01)]
         model = Chain(layer_1, layer_output)
         optim_type = AdamW(0.02)
         opt = Flux.setup(optim_type, model)
@@ -67,10 +69,10 @@ This function defines the command line interface for the PRSFNN package.
         max_iter = max_iter
     )
 
-    # open(betas_output_file, "w") do io
-    #     write(io, "variant\tmu\talpha\tvar\tss_beta\n")
-    #     writedlm(io, [summary_stats.SNP[good_variants] PRS[1] PRS[2] PRS[3] summary_stats.BETA[good_variants]], "\t")
-    # end
+    open(betas_output_file, "w") do io
+        write(io, "variant\tmu\talpha\tvar\tss_beta\n")
+        writedlm(io, [summary_stats.SNP[good_variants] PRS[1] PRS[2] PRS[3] summary_stats.BETA[good_variants]], "\t")
+    end
 
     if train_nn
         model = PRS[4]
