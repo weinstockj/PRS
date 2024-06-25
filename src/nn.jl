@@ -30,7 +30,7 @@
     yhat[:, 2] .= 1.0 ./ (1.0 .+ exp.(-yhat[:, 2]))
 ```
 """
-function fit_heritability_nn(model, opt, q_μ_sq, q_α, G, i=1; max_epochs=3000, patience=400, mse_improvement_threshold=0.01, test_ratio=0.2, num_splits=10, learning_rate_decay = 0.95)
+function fit_heritability_nn(model, opt, q_μ_sq, q_α, G, i=1; max_epochs=3000, patience=100, mse_improvement_threshold=0.01, test_ratio=0.2, num_splits=10, learning_rate_decay = 0.95)
 
 
     # G_standardized = standardize(G)
@@ -166,39 +166,31 @@ function predict_with_nn(model, G)
     neg_indices = []
     outputs = model(transpose(G))
     nn_σ2_β = exp.(outputs[1, :])
-    #nn_σ2_β = nn_σ2_β .- λ
-    #nn_σ2_β = logexpm1.(outputs[1, :])
-    # if !(all(>=(0), nn_σ2_β))
-    #     neg_indices = findall(x->x<0, nn_σ2_β)
-	# neg_outputs = outputs[1, :][neg_indices]
-	# println("negative outputs: $neg_outputs")
-	# println("negative nn_σ2_β: $(nn_σ2_β[neg_indices])")
-	# println("indicies: $neg_indices")
-    # end
     nn_p_causal = Flux.σ.(outputs[2, :]) 
     return nn_σ2_β, nn_p_causal
 end
 
 # RMSE
-function nn_loss(model, G, y; weight_slab = 1.0, weight_causal = 1.0) ## ak: need two losses for slab variance and percent causal 
+function nn_loss(model, G, y; w_σ2β = 1.0, w_p_causal = 1.0) ## ak: need two losses for slab variance and percent causal 
 
     yhat = model(G)
-    loss_slab = @views Flux.mse(yhat[1, :], y[1, :])
-    weighted_loss_slab = weight_slab * loss_slab
-    loss_causal = @views Flux.mse(yhat[2, :], y[2, :])
-    weighted_loss_causal = weight_causal * loss_causal
-    total_loss = weighted_loss_slab + weighted_loss_causal ## ak: losses summed to form the total loss for training
-    return total_loss
+    σ2β_mse = @views Flux.mse(yhat[1, :], y[1, :])
+    σ2β_dist = @views -sum(invgamma_logpdf.(exp.(yhat[1, :]), α = 10.0, θ = 1.0)) 
+
+
+    loss_σ2β = σ2β_mse + σ2β_dist / 100
+    p_causal_mse = @views Flux.mse(yhat[2, :], y[2, :])
+    p_causal_dist = @views -sum(beta_logpdf.(Flux.σ.(yhat[2, :])))
+    loss_p_causal = p_causal_mse + p_causal_dist / 100
+
+    # println("σ2β_mse: $σ2β_mse, σ2β_dist: $σ2β_dist, p_causal_mse: $p_causal_mse, p_causal_dist: $p_causal_dist")
+    # println(exp.(yhat[1, 1:3]))
+    # println(exp.(y[1, 1:3]))
+    return w_σ2β * loss_σ2β + w_p_causal * loss_p_causal ## ak: losses summed to form the total loss for training
 end
 
-# function nn_loss(model, batch; weight_slab = 1.0, weight_causal = 1.0) ## ak: need two losses for slab variance and percent causal 
-
-#     @show batch 
-#     G = batch[1]
-#     y = batch[2]
-
-#     return nn_loss(model, G, y; weight_slab = weight_slab, weight_causal = weight_causal)
-# end
+invgamma_logpdf(x; α = 1000, θ = 1.0) = α * log(θ) - SpecialFunctions.loggamma(α) - (α + 1) * log(x) - θ / x
+beta_logpdf(x; α = 1.0, β = 9.0) = xlogy(α - 1, x) + xlog1py(β - 1, -x) - SpecialFunctions.logbeta(α, β)
 
 # function plot_loss_vs_epochs(train_losses, test_losses, i, epoch_model_taken)
 #     plot(1:length(train_losses), train_losses, xlabel="Epochs", ylabel="Loss", label="train", title="Loss vs. Epochs, iteration $i, best at $epoch_model_taken", reuse=false)
