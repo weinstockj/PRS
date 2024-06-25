@@ -24,6 +24,7 @@ using BSON: @load, @save
 using LinearSolve
 # using Plots
 using StatsFuns
+using SpecialFunctions
 using LogExpFunctions
 using Parquet2
 
