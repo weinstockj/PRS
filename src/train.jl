@@ -246,10 +246,11 @@ function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, D::
 
         @info "$(ltime()) sum(q_α) = $(round(sum(q_α), digits = 2)), sum(cavi_q_marginal_var) = $(round(sum(q_var), digits = 2)), std(q_μ) = $(round(std(q_μ), digits = 2))"
         @info "$(ltime()) Inferred $(round(sum(cavi_q_α .> .50), digits = 2)) variants with PIP >= 50%"
-        println(findmax(abs.(q_μ)))
+        # println(findmax(abs.(q_μ)))
 
 
-        if train_nn & (sum(cavi_q_α .> .50) >= 20)
+        # if train_nn & (sum(cavi_q_α .> .50) >= 1)
+        if train_nn 
             # train the neural network using G and the new s and p_causal
             @timeit to "fit_heritability_nn" begin
                 # model = fit_heritability_nn(model, q_var, q_α, G, i) #*#
@@ -258,19 +259,19 @@ function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, D::
             end
 
             nn_σ2_β, nn_p_causal = predict_with_nn(trained_model, Float32.(G))
-
-            @info "nn_p_causal before normalization"
-            describe_vector(nn_p_causal)
-
-            @info "nn_σ2_β before normalization"
-            describe_vector(nn_σ2_β)
             # Main.@infiltrate
-            # nn_p_causal = nn_p_causal .* L ./ sum(nn_p_causal)
-            nn_σ2_β = nn_σ2_β .* (.001 * P) ./ sum(nn_σ2_β)
-            # @info "nn_p_causal after normalization"
-            describe_vector(nn_p_causal)
-            @info "nn_σ2_β after normalization"
-            describe_vector(nn_σ2_β)
+
+            # @info "nn_p_causal before normalization"
+            # describe_vector(nn_p_causal)
+
+            # @info "nn_σ2_β before normalization"
+            # describe_vector(nn_σ2_β)
+            # # Main.@infiltrate
+            # # nn_p_causal = nn_p_causal .* L ./ sum(nn_p_causal)
+            # nn_σ2_β = nn_σ2_β .* (.001 * P) ./ sum(nn_σ2_β)
+            # # @info "nn_p_causal after normalization"
+            # @info "nn_σ2_β after normalization"
+            # describe_vector(nn_σ2_β)
 
             @timeit to "deepcopys" begin
                 prev_model = deepcopy(model) #at iter 1, trained nn model
