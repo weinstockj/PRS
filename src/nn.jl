@@ -1,3 +1,107 @@
+function fit_genome_wide_nn(
+        betas = "/data/abattle4/april/hi_julia/prs_benchmark/prsfnn/jun22_adaptive_learning_rate/output/PRSFNN_out_final.tsv",
+        annotation_files_dir = "/data/abattle4/jweins17/annotations/output/", model_file = "trained_model.bson";
+        n_epochs = 300, H = 3, n_test = 10, learning_rate_decay = 0.95, patience = 30
+    )
+
+    summary_statistics = CSV.read(betas, DataFrame)
+    summary_statistics = rename!(summary_statistics, :variant => :variant_id)
+    parquets = return_parquets(annotation_files_dir)
+
+    # just to get K
+    first_parquet = first(parquets)
+    first_annot = select_annotation_columns(DataFrame(Parquet2.Dataset(first_parquet); copycols=false))
+    K = size(first_annot, 2)
+
+    layer_1 = Dense(K => H, Flux.softplus; init = Flux.glorot_normal(gain = 0.005))
+    layer_output = Dense(H => 2)
+    layer_output.bias .= [StatsFuns.log(0.0001), StatsFuns.logit(0.01)]
+    model = Chain(layer_1, layer_output)
+    initial_lr = 0.001
+    optim_type = AdamW(initial_lr)
+    opt = Flux.setup(optim_type, model)
+    @info "$(ltime()) Training model with $K annotations"
+
+
+    training_parquets = parquets[rand(1:length(parquets), n_epochs)]
+    test_parquets     = setdiff(parquets, training_parquets)[rand(1:(length(parquets) - n_epochs), n_test)]
+
+    test_annotations = vcat([DataFrame(Parquet2.Dataset(x); copycols=false) for x in test_parquets]...)
+    test_df        = innerjoin(test_annotations, summary_statistics, on = [:variant_id], makeunique=true)
+    test_SNPs      = test_df.variant_id
+    
+    test_X = Float32.(transpose(select_annotation_columns(test_df[:, names(test_annotations)])))
+    test_Y = Float32.(transpose(hcat(log.(test_df.mu .^ 2), logit.(test_df.alpha))))
+
+    @info "$(ltime()) Test set is comprised of $(length(test_parquets)) LD blocks and $(length(test_SNPs)) SNPs"
+
+    best_loss = Inf
+    count_since_best = 0
+    best_model_epoch = 1
+    train_losses = Float64[]
+    test_losses = Float64[]
+
+    @inbounds for i in 1:n_epochs
+        annot_file = training_parquets[i]
+        
+        @info "$(ltime()) Epoch $i now reading $annot_file"
+        annotations = DataFrame(Parquet2.Dataset(annot_file); copycols=false)
+        # annotations = Parquet2.Dataset(annot_file)
+        epoch_df = innerjoin(annotations, summary_statistics, on = [:variant_id])
+        epoch_annot = select_annotation_columns(epoch_df[:, names(annotations)])
+
+        X = Float32.(transpose(epoch_annot))
+        Y = Float32.(transpose(hcat(log.(epoch_df.mu .^ 2), logit.(epoch_df.alpha))))
+
+        data = (X, Y)
+
+        DL = Flux.DataLoader(data, batchsize=80, shuffle=true)
+
+        train!(nn_loss, model, DL, opt)
+
+        train_loss = nn_loss(
+                model, 
+                Float32.(X), 
+                Float32.(Y)
+            )
+
+        push!(train_losses, train_loss)
+
+        test_loss = nn_loss(
+                model,
+                test_X,
+                test_Y
+            )
+
+        push!(test_losses, test_loss)
+
+        if test_loss < best_loss
+            best_loss = test_loss
+            best_model = deepcopy(model)
+            best_model_epoch = i
+            count_since_best = 0
+        else
+            count_since_best += 1
+            Flux.adjust!(opt, opt.layers[1].weight.rule.opts[1].eta * learning_rate_decay)
+        end
+
+        if count_since_best >= patience
+            @info "$(ltime()) Early stopping after $i epochs. "
+            break
+        end
+
+        if i % 20 == 0
+            GC.gc() # garbage collection every 20 epochs
+        end
+
+        @info "$(ltime()) Epoch $i training loss: $(round(train_loss; digits = 2)), test loss: $(round(test_loss; digits = 2)), best loss: $(round(best_loss; digits = 2)), count since best: $count_since_best"
+
+    end
+
+    @save model_file model opt
+
+    return model, opt, train_losses, test_losses, setdiff(names(test_annotations), get_non_annotation_columns())
+end
 """
  fit_heritability_nn(model, q_μ, q_μ_sq, q_alpha, G)
 
@@ -175,13 +279,15 @@ function nn_loss(model, G, y; w_σ2β = 1.0, w_p_causal = 1.0) ## ak: need two l
 
     yhat = model(G)
     σ2β_mse = @views Flux.mse(yhat[1, :], y[1, :])
-    σ2β_dist = @views -sum(invgamma_logpdf.(exp.(yhat[1, :]), α = 10.0, θ = 1.0)) 
+    # σ2β_dist = @views -sum(invgamma_logpdf.(exp.(yhat[1, :]), α = 10.0, θ = 1.0)) 
 
 
-    loss_σ2β = σ2β_mse + σ2β_dist / 100
+    # loss_σ2β = σ2β_mse + σ2β_dist / 100
+    loss_σ2β = σ2β_mse 
     p_causal_mse = @views Flux.mse(yhat[2, :], y[2, :])
-    p_causal_dist = @views -sum(beta_logpdf.(Flux.σ.(yhat[2, :])))
-    loss_p_causal = p_causal_mse + p_causal_dist / 100
+    # p_causal_dist = @views -sum(beta_logpdf.(Flux.σ.(yhat[2, :])))
+    # loss_p_causal = p_causal_mse + p_causal_dist / 100
+    loss_p_causal = p_causal_mse 
 
     # println("σ2β_mse: $σ2β_mse, σ2β_dist: $σ2β_dist, p_causal_mse: $p_causal_mse, p_causal_dist: $p_causal_dist")
     # println(exp.(yhat[1, 1:3]))
@@ -198,3 +304,49 @@ beta_logpdf(x; α = 1.0, β = 9.0) = xlogy(α - 1, x) + xlog1py(β - 1, -x) - Sp
 #     vline!([epoch_model_taken], label="epoch of best")
 # end
 
+#function interpret_model(block = "chr18_59047676_60426196", model_file = "/data/abattle4/jweins17/PRS_runner/output/chr2/trained_model.bson", annot_data_path = "/data/abattle4/jweins17/annotations/output", gwas_file_name = "bmi_gwas.tsv", output_file = "effects.tsv"; min_MAF = 0.01)
+
+#    annot_file = joinpath(annot_data_path, block, "variant_list_ccre_annotated_complete.parquet") #"variant_list_annotated_adult_fetal.bed")
+#    #annot = CSV.read(annot_file, DataFrame)
+#    annot = DataFrame(Parquet2.Dataset(annot_file); copycols=false)
+#    rename!(annot,:variant_id => :SNP)
+
+#    #cell_types = names(annot)[5:226]
+#    #rename!(annot,:snp_id => :variant)
+#    annotation_columns = names(annot)
+#    #setdiff!(annotation_columns, ["snp_id", "chromosome", "start", "position"])
+#    setdiff!(annotation_columns, ["chrom", "start", "end", "SNP", "ref", "alt"])
+#    #push!(annotation_columns, "AF_ALT")
+#    gwas_file = joinpath("/data/abattle4/april/hi_julia/annotations/ccre/celltypes", block, gwas_file_name)
+#    annotations, summary_stats, current_LD_block_positions = load_annot_and_summary_stats(
+#                annot_file,
+#                #joinpath(annot_data_path, block, gwas_file_name);
+#                gwas_file;
+#		min_MAF = min_MAF
+#            )
+
+#    @load model_file model opt
+#    nn_σ2_β, nn_p_causal = predict_with_nn(model, annotations)
+
+#    max_p_causal_index = argmax(nn_p_causal)
+#    annotations_copy = copy(annotations)
+#    effects_σ2_β = zeros(length(annotation_columns))
+#    effects_p_causal = zeros(length(annotation_columns))
+
+#    for j in eachindex(annotation_columns)
+#        annotations_copy[:, j] .= 1
+#        nn_σ2_β_j, nn_p_causal_j = predict_with_nn(model, Float32.(annotations_copy))
+#        effects_σ2_β[j] = nn_σ2_β_j[max_p_causal_index] - nn_σ2_β[max_p_causal_index]
+#        effects_p_causal[j] = nn_p_causal_j[max_p_causal_index] - nn_p_causal[max_p_causal_index]
+#        annotations_copy[:, j] = annotations[:, j] # reset the j-th column to the original values
+#    end
+
+#    df = DataFrame(cell_type = annotation_columns, effects_σ2_β = effects_σ2_β, effects_p_causal = effects_p_causal)
+
+#    open(output_file, "w") do io
+#        write(io, "cell_type\teffects_variance\teffects_PIP\n")
+#        writedlm(io, [df.cell_type df.effects_σ2_β df.effects_p_causal], "\t")
+#    end
+
+#    return df
+#end

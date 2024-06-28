@@ -35,10 +35,17 @@ end
 
 unzip(a) = map(x->getfield.(a, x), fieldnames(eltype(a)))
 
+function get_non_annotation_columns()
+
+    non_annotation_columns = ["chrom", "start", "end", "SNP", "ref", "alt", "SNP","MAF", "N", "BETA", "SE", "PVALUE", "CHR", "BP", "variant_id", "Standard"]
+
+    return non_annotation_columns
+end
+
 function select_annotation_columns(df::DataFrame)
 
     all_columns = names(df)
-    non_annotation_columns = ["chrom", "start", "end", "SNP", "ref", "alt", "SNP","MAF", "N", "BETA", "SE", "PVALUE", "CHR", "BP", "variant_id", "standard"]
+    non_annotation_columns = get_non_annotation_columns()
     annotation_columns = setdiff(all_columns, non_annotation_columns)
 
     annotations = Matrix(select(df, annotation_columns))
