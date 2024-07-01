@@ -104,7 +104,7 @@ function write_output_betas(output_file, summary_stats, PRS, good_variants)
 
     CSV.write(output_file, df)
 
-    writefile(replace(output_file, "tsv" => "parquet", df)) # also write to parquet
+    writefile(replace(output_file, "tsv" => "parquet"), df) # also write to parquet
 end
 
 function return_parquets(dir)
