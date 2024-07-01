@@ -26,7 +26,7 @@ This function defines the command line interface for the PRSFNN package.
             betas_output_file::String = "PRSFNN_out.tsv", 
             interpretation_output_file::String = "nn_interpretation.tsv"; min_MAF = 0.01, train_nn = false, H = 5, max_iter = 5)
 
-    @info "$(ltime()) Current block: $block"
+    @info "$(ltime()) Current block/output_prefix: $output_prefix"
     annotations, summary_stats, current_LD_block_positions = load_annot_and_summary_stats(
                 annot_data_path,
                 gwas_data_path,
