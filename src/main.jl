@@ -102,7 +102,7 @@ function write_output_betas(output_file, summary_stats, PRS, good_variants)
         ss_beta = summary_stats.BETA[good_variants]
     )
 
-    CSV.write(output_file, df)
+    CSV.write(output_file, df; delim = "\t")
 
     Parquet2.writefile(replace(output_file, "tsv" => "parquet"), df) # also write to parquet
 end

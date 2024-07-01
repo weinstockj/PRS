@@ -4,7 +4,7 @@ function fit_genome_wide_nn(
         n_epochs = 300, H = 3, n_test = 10, learning_rate_decay = 0.95, patience = 30
     )
 
-    summary_statistics = CSV.read(betas, DataFrame)
+    summary_statistics = CSV.read(betas, DataFrame; delim = "\t")
     summary_statistics = rename!(summary_statistics, :variant => :variant_id)
     parquets = return_parquets(annotation_files_dir)
 
