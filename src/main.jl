@@ -50,7 +50,8 @@ This function defines the command line interface for the PRSFNN package.
         opt = Flux.setup(optim_type, model)
     end
 
-    LD_output_path = joinpath("LD_output", output_prefix)
+    LD_output_path = joinpath(output_prefix, "LD_output")
+    @info "$(ltime()) Now creating directory $LD_output_path for LD output files."
     mkpath(LD_output_path)        
 
     LD_reference_filtered = joinpath(LD_output_path, "filtered")
