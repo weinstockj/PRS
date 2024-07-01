@@ -9,7 +9,7 @@ This function defines the command line interface for the PRSFNN package.
 - `output_prefix`: A prefix for the output files
 - `annot_data_path`: A path to the directory containing the annotations
 - `ld_panel_path`: A path to the directory containing the LD reference panel 
-- `gwas_file_path`: A path to the GWAS summary statistics file 
+- `gwas_data_path`: A path to the GWAS summary statistics file 
 - `model_file`: A path to the file containing the trained model 
 - `betas_output_file`: A path to the file where the PRS betas will be saved 
 - `interpretation_output_file`: A path to the file where the interpretation of the model will be saved
@@ -20,7 +20,7 @@ This function defines the command line interface for the PRSFNN package.
             annot_data_path::String = "/data/abattle4/jweins17/annotations/output/chr13_110581699_111677479/variant_list_ccre_annotated_complete.parquet", 
             ld_panel_path::String = "/data/abattle4/jweins17/LD_REF_PANEL/output/bcf/chr13_110581699_111677479/filtered_EUR",
 
-	    gwas_file_path::String = "/data/abattle4/april/hi_julia/annotations/ccre/celltypes/chr13_110581699_111677479/neale_bmi_gwas.tsv",
+	    gwas_data_path::String = "/data/abattle4/april/hi_julia/annotations/ccre/celltypes/chr13_110581699_111677479/neale_bmi_gwas.tsv",
 	    model_file::String = "trained_model.bson",
 	    # model_file::String = "/data/abattle4/april/hi_julia/prs_benchmark/prsfnn/jun14_save_model_and_opt_state/output/chr13/trained_model.bson",
             betas_output_file::String = "PRSFNN_out.tsv", 
