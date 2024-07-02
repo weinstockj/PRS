@@ -159,17 +159,23 @@ function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, D::
 
         X_sd = sqrt.(D ./ N)
 
-
         @timeit to "inferring σ2" σ2, R2, yty = infer_σ2(coef, SE, R, D, X_sd, median(N), P; estimate = true)
         @info "$(ltime()) Estimated σ2 = $(round(σ2; digits = 2)), h2 = $(round(R2; digits = 2))"
 
-        if train_nn
-            nn_p_causal = 0.01 * ones(P)
-            nn_σ2_β = σ2 * 0.001 * ones(P)
-        else
+        if (model != nothing) & !train_nn
             @info "$(ltime()) Resetting max_iter from $max_iter to 1 because the nn is frozen"
             nn_σ2_β, nn_p_causal = predict_with_nn(model, Float32.(G))
+            nn_σ2_β = nn_σ2_β .* σ2
             max_iter = 1
+        else
+            @info "$(ltime()) Initializing prior inclusion probability and slab variance"
+            nn_p_causal = 0.01 .* ones(P)
+            nn_σ2_β = σ2 .* 0.0001 .* ones(P)
+        end
+
+        if !train_nn 
+            max_iter = 1
+            @info "$(ltime()) Resetting max_iter from $max_iter to 1 because the nn is frozen"
         end
 
         K = size(G, 2)

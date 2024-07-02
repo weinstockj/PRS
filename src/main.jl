@@ -21,8 +21,8 @@ This function defines the command line interface for the PRSFNN package.
             ld_panel_path::String = "/data/abattle4/jweins17/LD_REF_PANEL/output/bcf/chr13_110581699_111677479/filtered_EUR",
 
 	    gwas_data_path::String = "/data/abattle4/april/hi_julia/annotations/ccre/celltypes/chr13_110581699_111677479/neale_bmi_gwas.tsv",
-	    model_file::String = "trained_model.bson",
 	    # model_file::String = "/data/abattle4/april/hi_julia/prs_benchmark/prsfnn/jun14_save_model_and_opt_state/output/chr13/trained_model.bson",
+            model_file::String = "trained_model.bson",
             betas_output_file::String = "PRSFNN_out.tsv", 
             interpretation_output_file::String = "nn_interpretation.tsv"; min_MAF = 0.01, train_nn = false, H = 5, max_iter = 5)
 
@@ -38,16 +38,8 @@ This function defines the command line interface for the PRSFNN package.
     if isfile(model_file)
         @load model_file model opt
     else
-        @info "$(ltime()) $model_file not found, creating new model!"
-        # File doesn't exist, create a new model
-        K = size(annotations, 2)
-        layer_1 = Dense(K => H, Flux.softplus; init = Flux.glorot_normal(gain = 0.005))
-        layer_output = Dense(H => 2)
-        layer_output.bias .= [StatsFuns.log(0.0001), StatsFuns.logit(0.01)]
-        model = Chain(layer_1, layer_output)
-        initial_lr = 0.02
-        optim_type = AdamW(initial_lr)
-        opt = Flux.setup(optim_type, model)
+        model = nothing
+        opt   = nothing
     end
 
     LD_output_path = joinpath(output_prefix, "LD_output")
