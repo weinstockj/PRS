@@ -85,7 +85,7 @@ function train_cavi(p_causal, σ2_β, X_sd, i_iter, coef, SE, R, D, to; P = 1_00
         end
         @timeit to "update SSR" SSR .= q_μ .^ 2 ./ q_var
         @timeit to "clamp SSR" SSR = clamp_ssr(SSR)
-        @timeit to "update q_odds" q_odds .= (p_causal ./ (1 .- p_causal)) .* q_sd ./ sqrt.(σ2_β) .* exp.(SSR ./ 2.0) ## ak: eq 10; update a_k 
+        @timeit to "update q_odds" q_odds .= (p_causal ./ (1 .- p_causal)) .* q_sd ./ sqrt.(σ2_β .* σ2) .* exp.(SSR ./ 2.0) ## ak: eq 10; update a_k 
         @timeit to "update q_α" q_α .= q_odds ./ (1.0 .+ q_odds)
     end
 
