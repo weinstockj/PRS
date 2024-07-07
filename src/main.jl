@@ -50,7 +50,11 @@ This function defines the command line interface for the PRSFNN package.
     snpdata = SnpData(ld_panel_path)
     SnpArrays.filter(snpdata; des=LD_reference_filtered, f_snp = x -> x[:position] in current_LD_block_positions)
     LD_reference_filtered = LD_reference_filtered * ".bed"
-    LD, D, good_variants = compute_LD(LD_reference_filtered)
+    LD, X_sd, AF, good_variants = compute_LD(LD_reference_filtered)
+
+    XtX = construct_XtX(LD, X_sd[good_variants], mean(summary_stats.N[good_variants]))
+    D = construct_D(XtX)
+    Xty = construct_Xty(summary_stats.BETA[good_variants], D)
 
     @assert !any(isnan.(LD))
 
@@ -58,7 +62,8 @@ This function defines the command line interface for the PRSFNN package.
         summary_stats.BETA[good_variants],
         summary_stats.SE[good_variants],
         LD, # correlation matrix already filtered for good variants
-        D, # already filtered for good variants
+        XtX,
+        Xty,
         annotations[good_variants, :],
         model = model,
         opt = opt,
@@ -81,6 +86,15 @@ This function defines the command line interface for the PRSFNN package.
     #     gwas_file_name, 
     #     interpretation_output_file;
     #     min_MAF = min_MAF
+    # )
+    #
+    # return DataFrame(
+    #     variant = summary_stats.SNP[good_variants],
+    #     mu = PRS[1],
+    #     alpha = PRS[2],
+    #     var = PRS[3],
+    #     ss_beta = summary_stats.BETA[good_variants],
+    #     PVALUE = summary_stats.PVALUE[good_variants]
     # )
 end
 

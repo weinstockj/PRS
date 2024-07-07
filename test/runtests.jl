@@ -1,5 +1,5 @@
 using Test
-using PRSFNN: joint_log_prob, log_prior, rss, elbo, simulate_raw, estimate_sufficient_statistics, train_until_convergence, fit_heritability_nn, infer_σ2
+using PRSFNN: joint_log_prob, log_prior, rss, elbo, simulate_raw, estimate_sufficient_statistics, train_until_convergence, fit_heritability_nn, infer_σ2, construct_XtX, construct_D, construct_Xty
 using Distributions: Normal
 using Statistics: cor
 using TimerOutputs
@@ -123,7 +123,11 @@ function test_infer_σ2()
         raw = simulate_raw(;N = N, P = P, K = K, h2 = h2)
         ss = estimate_sufficient_statistics(raw[1], raw[3])
         X_sd = sqrt.(ss[5] ./ N)
-        σ2, R2, yty = infer_σ2(ss[1], ss[2], ss[4], ss[5], X_sd, N, P; estimate = true)
+        R = ss[4]
+        XtX = construct_XtX(R, X_sd, N)
+        D = construct_D(XtX)
+        Xty = construct_Xty(ss[1], D)
+        σ2, R2, yty = infer_σ2(ss[1], ss[2], XtX, Xty, N, P; estimate = true)
         @test abs(R2 - h2) < 0.05
 end
 

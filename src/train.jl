@@ -1,4 +1,4 @@
-function train_cavi(p_causal, σ2_β, X_sd, i_iter, coef, SE, R, D, to; P = 1_000, n_elbo = 10, max_iter = 5, N = 10_000, σ2 = 1.0)
+function train_cavi(p_causal, σ2_β, coef, SE, R, XtX, Xty, to; P = 1_000, n_elbo = 10, max_iter = 5, N = 10_000, σ2 = 1.0)
    
     @timeit to "initialize" begin
         @info "$(ltime()) Initializing CAVI..."
@@ -16,9 +16,6 @@ function train_cavi(p_causal, σ2_β, X_sd, i_iter, coef, SE, R, D, to; P = 1_00
         q_var_best = copy(q_var)
         q_α_best = copy(q_α)
         q_odds_best = copy(q_odds)
-
-        Xty = @timeit to "copy Xty" copy(coef .* D)
-        XtX = @timeit to "Create XtX" Symmetric(Diagonal(X_sd) * R * Diagonal(X_sd) .* N)
 
         mean_loss = -Inf
         best_loss = -Inf
@@ -100,26 +97,26 @@ end
     # Arguments
     - `coef::Vector`: A length P vector of effect sizes
     - `SE::Vector`: A length P vector of standard errors
-    - `R::AbstractArray`: A P x P correlation matrix
-    - `D::Vector`: A length P vector of the sum of squared genotypes
+    - `XtX::AbstractArray`: A P x P matrix equal to N times the covariance matrix of the genotypes
+    - `Xty::Vector`: A length P vector of the inner product between genotype and phenotype
     - `N`: Number of samples
     - `P`: Number of SNPs
 """
-function infer_σ2(coef::Vector, SE::Vector, R::AbstractArray, D::Vector, X_sd::Vector, N::Real, P::Int64; estimate = false, λ = 100)
+function infer_σ2(coef::Vector, SE::Vector, XtX::AbstractArray, Xty::Vector, N::Real, P::Int64; estimate = false, λ = 100)
 
-    Xty = coef .* D
-    XtX = Symmetric(X_sd .* R .* X_sd') .* N
+    D = construct_D(XtX)
+
     if estimate
         prob = LinearProblem(XtX + λ * I, Xty)
         init(prob);
         sol = solve(prob)
         β_joint = sol.u
-        yty = maximum(D .* (SE .^ 2) .* (N - 1) .+ D .* (coef .^ 2)) 
+        yty = median(D .* (SE .^ 2) .* (N - 1) .+ D .* (coef .^ 2)) 
         R2 = β_joint' * Xty / yty
     else
         R2 = 0.0 # assume no h2
     end
-    yty = maximum(D .* (SE .^ 2) .* (N - 1) .+ D .* (coef .^ 2)) 
+    yty = median(D .* (SE .^ 2) .* (N - 1) .+ D .* (coef .^ 2)) 
     σ2 = (1 - R2) * yty / (N - P)
 
     GC.gc()
@@ -141,7 +138,7 @@ end
     - `G::AbstractArray`: A P x K matrix of annotations
     
 """
-function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, D::Vector, G::AbstractArray; model = model, opt = opt, max_iter = 4, threshold = 0.2, train_nn = true, N = 10_000) 
+function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, XtX::AbstractArray, Xty::Vector, G::AbstractArray; model = model, opt = opt, max_iter = 4, threshold = 0.2, train_nn = true, N = 10_000) 
 
     to = TimerOutput()
     ## initialize
@@ -157,9 +154,7 @@ function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, D::
         cavi_q_var = copy(q_var) # ones(P) * 0.001
         cavi_q_α = copy(q_α) # ones(P) .* 0.10
 
-        X_sd = sqrt.(D ./ N)
-
-        @timeit to "inferring σ2" σ2, R2, yty = infer_σ2(coef, SE, R, D, X_sd, median(N), P; estimate = true)
+        @timeit to "inferring σ2" σ2, R2, yty = infer_σ2(coef, SE, XtX, Xty, median(N), P; estimate = true, λ = 0.50 * median(N))
         @info "$(ltime()) Estimated σ2 = $(round(σ2; digits = 2)), h2 = $(round(R2; digits = 2))"
 
         if (model != nothing) & !train_nn
@@ -190,18 +185,15 @@ function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, D::
     for i in 1:max_iter
         @info "$(ltime()) Training outer-loop iteration $i"
         # train CAVI using set slab variance and p_causal as inputs; first round
-        # cavi_q_u is cavi trained estimated betas, and coef is from iteration before
-        # q_μ, q_α, q_var, odds, new_loss, cavi_losses = train_cavi(cavi_q_μ, cavi_q_α, cavi_q_var, nn_p_causal, nn_σ2_β, X_sd, i, coef, SE, R, D)
         @timeit to "train_cavi" begin
            q_μ, q_α, q_var, odds, loss, loss_se = train_cavi(
                 nn_p_causal, 
                 nn_σ2_β, 
-                X_sd, 
-                i, 
                 coef, 
                 SE, 
                 R, 
-                D,
+                XtX,
+                Xty,
                 to; # the timer function
                 P=P,
                 N=N,

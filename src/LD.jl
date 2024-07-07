@@ -14,8 +14,19 @@ function compute_LD(LD_reference::String = "test_data/test_data/chr1_16103_11703
     @info "$(ltime()) Number of polymorphic variants out of all variants: $(length(good_variants)) / $(size(genotypes_float, 2))"
     good_genotypes = view(genotypes_float, :, good_variants)
     R = cor(good_genotypes)
-    D = map(x -> sum(x .^ 2), eachcol(good_genotypes))
-    return R, D, good_variants
+    return R, sds, mean_frequencies ./ 2.0, good_variants
+end
+
+function construct_XtX(R::AbstractArray, X_sd::Vector{Float64}, N::Real)
+    return Symmetric(X_sd .* R .* X_sd') .* N
+end
+
+function construct_Xty(coef::Vector{Float64}, D)
+    return coef .* D
+end
+
+function construct_D(XtX::AbstractArray)
+    return @view(XtX[diagind(XtX)])
 end
 
 function poet_cov(X::AbstractArray; K = 100, τ = 0.01, N = 1000)
