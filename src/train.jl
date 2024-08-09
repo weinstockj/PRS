@@ -1,4 +1,4 @@
-function train_cavi(p_causal, σ2_β, coef, SE, R, XtX, Xty, to; P = 1_000, n_elbo = 10, max_iter = 5, N = 10_000, σ2 = 1.0)
+function train_cavi(p_causal, σ2_β, coef, SE, R, XtX, Xty, to; P = 1_000, n_elbo = 10, max_iter = 5, N = 10_000, yty = 10_000, spike_σ2 = 1e-5)
    
     @timeit to "initialize" begin
         @info "$(ltime()) Initializing CAVI..."
@@ -11,6 +11,7 @@ function train_cavi(p_causal, σ2_β, coef, SE, R, XtX, Xty, to; P = 1_000, n_el
         q_α = ones(P) .* 0.10
         q_odds = ones(P)
         SSR = ones(P)
+        σ2 = 1.0
 
         q_μ_best = copy(q_μ)
         q_var_best = copy(q_var)
@@ -84,6 +85,17 @@ function train_cavi(p_causal, σ2_β, coef, SE, R, XtX, Xty, to; P = 1_000, n_el
         @timeit to "clamp SSR" SSR = clamp_ssr(SSR)
         @timeit to "update q_odds" q_odds .= (p_causal ./ (1 .- p_causal)) .* q_sd ./ sqrt.(σ2_β .* σ2) .* exp.(SSR ./ 2.0) ## ak: eq 10; update a_k 
         @timeit to "update q_α" q_α .= q_odds ./ (1.0 .+ q_odds)
+
+        @timeit to "update σ2" begin
+            # Main.@infiltrate
+            a = (1 + median(N) + P) / 2 
+            # Dt =  Diagonal(q_α ./ σ2_β .+ (1.0 .- q_α) ./ spike_σ2)
+            # b = (1.0 + yty - 2 * sum(q_μ .* Xty) + q_μ' * XtX * q_μ + q_μ' * Dt * q_μ) / 2
+            b = (1.0 + yty - 2 * sum(q_μ .* Xty) + q_μ' * XtX * q_μ) / 2
+            error_dist = InverseGamma(a, b)
+            σ2 = mean(error_dist)
+            @info "$(ltime()) σ2 estimate = $(round(σ2; digits = 3))"
+        end
     end
 
     @info "$(ltime()) CAVI updates finished"
@@ -185,8 +197,24 @@ function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, XtX
     for i in 1:max_iter
         @info "$(ltime()) Training outer-loop iteration $i"
         # train CAVI using set slab variance and p_causal as inputs; first round
-        @timeit to "train_cavi" begin
-           q_μ, q_α, q_var, odds, loss, loss_se = train_cavi(
+        # @timeit to "train_cavi" begin
+        #    q_μ, q_α, q_var, odds, loss, loss_se = train_cavi(
+        #         nn_p_causal, 
+        #         nn_σ2_β, 
+        #         coef, 
+        #         SE, 
+        #         R, 
+        #         XtX,
+        #         Xty,
+        #         to; # the timer function
+        #         P = P,
+        #         N = N,
+        #         yty = yty,
+        #     )
+        #     @info "$(ltime()) Training CAVI finished"
+        # end
+        @timeit to "train_gibbs" begin
+           q_μ, q_α, _ = train_gibbs(
                 nn_p_causal, 
                 nn_σ2_β, 
                 coef, 
@@ -195,11 +223,11 @@ function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, XtX
                 XtX,
                 Xty,
                 to; # the timer function
-                P=P,
-                N=N,
-                σ2=σ2
+                P = P,
+                N = N,
+                yty = yty,
             )
-            @info "$(ltime()) Training CAVI finished"
+            @info "$(ltime()) Training gibbs finished"
         end
 
         if i % 2 == 0
@@ -208,33 +236,33 @@ function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, XtX
             end
         end
 
-        if i >= 2
-            @info "$(ltime()) difference from n, n-1 (%) = $(round(100 * (loss - prev_loss) / abs(prev_loss); digits = 2))%"
-        end
+        # if i >= 2
+        #     @info "$(ltime()) difference from n, n-1 (%) = $(round(100 * (loss - prev_loss) / abs(prev_loss); digits = 2))%"
+        # end
 
-        # check for convergence
-        @info "$(ltime()) ELBO = $(round(loss; digits = 2)), previous ELBO = $(round(prev_loss; digits = 1)), ELBO SE = $(round(loss_se; digits = 1)), threshold = $(round(threshold; digits = 2))"
+        # # check for convergence
+        # @info "$(ltime()) ELBO = $(round(loss; digits = 2)), previous ELBO = $(round(prev_loss; digits = 1)), ELBO SE = $(round(loss_se; digits = 1)), threshold = $(round(threshold; digits = 2))"
 
-        # println("IMPROVEMENT FROM PREV ITERATION: $((loss - prev_loss) / loss_se)")
+        # # println("IMPROVEMENT FROM PREV ITERATION: $((loss - prev_loss) / loss_se)")
 
-	if (loss - prev_loss) / loss_se < threshold
-            @info "$(ltime()) ELBO did not increase by the required amount; breaking now"
-            break 
-        end
+	# if (loss - prev_loss) / loss_se < threshold
+        #     @info "$(ltime()) ELBO did not increase by the required amount; breaking now"
+        #     break 
+        # end
 
-        if abs(loss - prev_loss) / loss_se < threshold
-            @info "$(ltime()) Converged"
-            break
-        end
+        # if abs(loss - prev_loss) / loss_se < threshold
+        #     @info "$(ltime()) Converged"
+        #     break
+        # end
 
-        prev_loss = copy(loss)
+        # prev_loss = copy(loss)
 
         ## ak: Set α(i) =α and μ(i) =μ
         L = sum(q_α)
         cavi_q_μ = copy(q_μ)
         cavi_q_α = copy(q_α)
-        cavi_q_var = copy(q_var)
-        cavi_q_marginal_var = compute_marginal_variance(q_μ, q_var, q_α)
+        # cavi_q_var = copy(q_var)
+        # cavi_q_marginal_var = compute_marginal_variance(q_μ, q_var, q_α)
 
         @info "q_μ / sqrt(σ2)"
         describe_vector(q_μ ./ sqrt(σ2))
@@ -286,7 +314,8 @@ function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, XtX
     if train_nn
         return cavi_q_μ, cavi_q_α, cavi_q_var, prev_model
     else
-        return cavi_q_μ, cavi_q_α, cavi_q_var, model
+        # return cavi_q_μ, cavi_q_α, cavi_q_var, model
+        return cavi_q_μ, cavi_q_α, model
     end
 end
 
@@ -297,4 +326,62 @@ end
 
 function compute_marginal_variance(q_μ, q_var, p_slab = 0.01, spike_σ2 = 1e-8)
     return p_slab .* q_var .+ (1 .- p_slab) .* spike_σ2 .+ (p_slab .* q_μ .^ 2 .- (p_slab .* q_μ) .^ 2)
+end
+
+function train_gibbs(p_causal, σ2_β, coef, SE, R, XtX, Xty, to; P = 1_000, max_iter = 200, N = 10_000, yty = 10_000, spike_σ2 = 1e-5, λ = 300)
+
+    warmup = 100
+    thin = 5
+    ## initialize
+    σ2 = 0.3
+    β_draw = zeros(P, max_iter)
+    slab_prob = zeros(P)
+    spike_prob = zeros(P)
+    γt = zeros(P, max_iter)
+    γt[:, 1] .= rand.(Bernoulli.(ones(P) .* 0.5))
+    σ2t = ones(max_iter)
+    σ2t[1] = σ2
+    slab_dist = Normal.(0, sqrt(σ2t[1]) .* sqrt.(σ2_β .+ spike_σ2))
+    α = zeros(P)
+
+    Dt = PDiagMat(zeros(P))
+    Σt = PDMat(Symmetric(XtX + λ * I))
+    Σtinv = zeros(P, P)
+
+    @info "$(ltime()) Starting Gibbs sampling..."
+    for t in 2:max_iter
+        if t % 50 == 0
+            @info "$(ltime()) Gibbs sampling iteration $t out of $max_iter"
+        end
+        @timeit to "gibbs" begin
+            @timeit to "update Dt" Dt = @views PDiagMat(γt[:, t - 1] ./ σ2_β .+ (1.0 .- γt[:, t - 1]) ./ spike_σ2)
+            @timeit to "update Σt" Σt = PDMat(XtX + Dt)
+            # @timeit to "update Σt" pdadd!(Σt, Dt)
+
+            # @timeit to "update Σt" Σt .+= Dt
+            @timeit to "update Σtinv" Σtinv .= inv(Σt)
+            @timeit to "define β_dist" β_dist = @views MvNormal(Σtinv * Xty, Σtinv * σ2t[t - 1])
+            @timeit to "draw β" β_draw[:, t] .= rand(β_dist)
+            @timeit to "define slab dist" slab_dist .= @views Normal.(0, sqrt(σ2t[t - 1]) .* sqrt.(σ2_β .+ spike_σ2))
+            @timeit to "define spike dist" spike_dist = @views Normal(0, sqrt(σ2t[t - 1]) .* sqrt(spike_σ2))
+            @timeit to "compute PIP" begin
+                slab_prob .= @views pdf.(slab_dist, β_draw[:, t])
+                spike_prob .= @views pdf(spike_dist, β_draw[:, t])
+                α .= (p_causal .* slab_prob) ./ (p_causal .* slab_prob .+ (1 .- p_causal) .* spike_prob)
+            end
+            @timeit to "draw γ" γt[:, t] .= rand.(Bernoulli.(α))
+            @timeit to "update σ2" begin
+                a = (1 + median(N) + P) / 2 
+                b = @views (1.0 + yty - 2 * sum(β_draw[:, t] .* Xty) + β_draw[:, t]' * XtX * β_draw[:, t] + β_draw[:, t]' * Dt * β_draw[:, t]) / 2
+                # b = @views (1.0 + yty - 2 * sum(β_draw[:, t] .* Xty) + quad(XtX, β_draw[:, t]) + β_draw[:, t]' * Dt * β_draw[:, t]) / 2
+                error_dist = InverseGamma(a, b)
+                σ2t[t] = rand(error_dist)
+            end
+            # @timeit to "update Σt" Σt .-= Dt
+        end
+    end
+
+
+    # return vec(mean(β_draw[:, warmup:thin:max_iter], dims = 2)), vec(mean(γt[:, warmup:thin:max_iter], dims = 2)), α, mean(σ2t[warmup:thin:max_iter])
+    return vec(mean(β_draw[:, warmup:thin:max_iter], dims = 2)), vec(mean(γt[:, warmup:thin:max_iter], dims = 2)), α
 end
