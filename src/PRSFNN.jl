@@ -18,6 +18,8 @@ using CSV
 using DataFrames
 using DelimitedFiles
 using PDMats
+using PDMats: quad
+using PDMats: pdadd!
 using TimerOutputs
 using BSON
 using BSON: @load, @save

@@ -88,14 +88,7 @@ This function defines the command line interface for the PRSFNN package.
     #     min_MAF = min_MAF
     # )
     #
-    # return DataFrame(
-    #     variant = summary_stats.SNP[good_variants],
-    #     mu = PRS[1],
-    #     alpha = PRS[2],
-    #     var = PRS[3],
-    #     ss_beta = summary_stats.BETA[good_variants],
-    #     PVALUE = summary_stats.PVALUE[good_variants]
-    # )
+    # return PRS
 end
 
 function write_output_betas(output_file, summary_stats, PRS, good_variants)
@@ -104,7 +97,7 @@ function write_output_betas(output_file, summary_stats, PRS, good_variants)
         variant = summary_stats.SNP[good_variants],
         mu = PRS[1],
         alpha = PRS[2],
-        var = PRS[3],
+        # var = PRS[3],
         ss_beta = summary_stats.BETA[good_variants]
     )
 
