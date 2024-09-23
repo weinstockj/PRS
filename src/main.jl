@@ -20,9 +20,9 @@ This function defines the command line interface for the PRSFNN package.
             annot_data_path::String = "/data/abattle4/jweins17/annotations/output/chr13_110581699_111677479/variant_list_ccre_annotated_complete.parquet", 
             ld_panel_path::String = "/data/abattle4/jweins17/LD_REF_PANEL/output/bcf/chr13_110581699_111677479/filtered_EUR",
 
-	    gwas_data_path::String = "/data/abattle4/april/hi_julia/annotations/ccre/celltypes/chr13_110581699_111677479/neale_bmi_gwas.tsv",
+	    gwas_data_path::String = "/data/abattle4/april/hi_julia/annotations/ccre/celltypes/chr13_110581699_111677479/neale_bmi_gwas_july24.tsv",
 	    # model_file::String = "/data/abattle4/april/hi_julia/prs_benchmark/prsfnn/jun14_save_model_and_opt_state/output/chr13/trained_model.bson",
-            model_file::String = "trained_model.bson",
+            model_file::String = "",
             betas_output_file::String = "PRSFNN_out.tsv", 
             interpretation_output_file::String = "nn_interpretation.tsv"; min_MAF = 0.01, train_nn = false, H = 5, max_iter = 5)
 
@@ -49,8 +49,24 @@ This function defines the command line interface for the PRSFNN package.
     LD_reference_filtered = joinpath(LD_output_path, "filtered")
     snpdata = SnpData(ld_panel_path)
     SnpArrays.filter(snpdata; des=LD_reference_filtered, f_snp = x -> x[:position] in current_LD_block_positions)
-    LD_reference_filtered = LD_reference_filtered * ".bed"
-    LD, X_sd, AF, good_variants = compute_LD(LD_reference_filtered)
+    LD_reference_filtered_bed = LD_reference_filtered * ".bed"
+    LD, X_sd, AF, good_variants = compute_LD(LD_reference_filtered_bed)
+
+    bim_LD_ref_filtered_SNPs = readdlm(LD_reference_filtered * ".bim")
+    bim_LD_ref_filtered_SNPs = bim_LD_ref_filtered_SNPs[:,2][good_variants]
+    good_indices = Int64[]
+    for i in 1:size(summary_stats)[1]
+        if summary_stats.SNP[i] in bim_LD_ref_filtered_SNPs
+            push!(good_indices, i)
+        end
+    end
+    summary_stats = summary_stats[good_indices, :]
+    annotations = annotations[good_indices, :]
+    # filter!(row -> (row.SNP in bim_LD_ref_filtered_SNPs), summary_stats)
+
+    @assert size(summary_stats)[1] == length(good_variants)
+    println("are SNP ids the same?")
+    println("$(isequal(bim_LD_ref_filtered_SNPs, summary_stats.SNP))")
 
     XtX = construct_XtX(LD, X_sd[good_variants], mean(summary_stats.N[good_variants]))
     D = construct_D(XtX)
@@ -76,7 +92,7 @@ This function defines the command line interface for the PRSFNN package.
 
     if train_nn
         model = PRS[4]
-        @save model_file model opt
+        # @save model_file model opt
     end
 
     # effects = interpret_model(
@@ -88,7 +104,7 @@ This function defines the command line interface for the PRSFNN package.
     #     min_MAF = min_MAF
     # )
     #
-    # return PRS
+    return PRS
 end
 
 function write_output_betas(output_file, summary_stats, PRS, good_variants)

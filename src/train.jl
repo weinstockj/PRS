@@ -328,7 +328,7 @@ function compute_marginal_variance(q_μ, q_var, p_slab = 0.01, spike_σ2 = 1e-8)
     return p_slab .* q_var .+ (1 .- p_slab) .* spike_σ2 .+ (p_slab .* q_μ .^ 2 .- (p_slab .* q_μ) .^ 2)
 end
 
-function train_gibbs(p_causal, σ2_β, coef, SE, R, XtX, Xty, to; P = 1_000, max_iter = 200, N = 10_000, yty = 10_000, spike_σ2 = 1e-5, λ = 300)
+function train_gibbs(p_causal, σ2_β, coef, SE, R, XtX, Xty, to; P = 1_000, max_iter = 250, N = 10_000, yty = 10_000, spike_σ2 = 1e-5, λ = 10_000)
 
     warmup = 100
     thin = 5
@@ -355,7 +355,7 @@ function train_gibbs(p_causal, σ2_β, coef, SE, R, XtX, Xty, to; P = 1_000, max
         end
         @timeit to "gibbs" begin
             @timeit to "update Dt" Dt = @views PDiagMat(γt[:, t - 1] ./ σ2_β .+ (1.0 .- γt[:, t - 1]) ./ spike_σ2)
-            @timeit to "update Σt" Σt = PDMat(XtX + Dt)
+            @timeit to "update Σt" Σt = PDMat(XtX + Dt + λ * I)
             # @timeit to "update Σt" pdadd!(Σt, Dt)
 
             # @timeit to "update Σt" Σt .+= Dt
@@ -369,6 +369,7 @@ function train_gibbs(p_causal, σ2_β, coef, SE, R, XtX, Xty, to; P = 1_000, max
                 spike_prob .= @views pdf(spike_dist, β_draw[:, t])
                 α .= (p_causal .* slab_prob) ./ (p_causal .* slab_prob .+ (1 .- p_causal) .* spike_prob)
             end
+            # Main.@infiltrate
             @timeit to "draw γ" γt[:, t] .= rand.(Bernoulli.(α))
             @timeit to "update σ2" begin
                 a = (1 + median(N) + P) / 2 

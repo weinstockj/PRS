@@ -10,6 +10,17 @@ function load_annot_and_summary_stats(annotation_path::String, summary_statistic
     annotation_columns = names(annot)
     summary_statistics = CSV.read(summary_statistics_path, DataFrame)
 
+    # rename!(
+    #     summary_statistics, 
+    #     :variant => :SNP,
+    #     :minor_AF => :MAF,
+    #     :n_complete_samples => :N,
+    #     :beta => :BETA,
+    #     :se => :SE,
+    #     :pval => :PVALUE
+    # )
+
+    # required_columns = [:SNP, :MAF, :N, :BETA, :SE, :PVALUE, :ytx]
     required_columns = [:SNP, :MAF, :N, :BETA, :SE, :PVALUE]
 
     summary_statistics = select(summary_statistics, required_columns)
