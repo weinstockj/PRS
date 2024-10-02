@@ -16,14 +16,14 @@ This function defines the command line interface for the PRSFNN package.
 
 """
 
-@main function main(output_prefix::String = "chr13_110581699_111677479", 
-            annot_data_path::String = "/data/abattle4/jweins17/annotations/output/chr13_110581699_111677479/variant_list_ccre_annotated_complete.parquet", 
-            ld_panel_path::String = "/data/abattle4/jweins17/LD_REF_PANEL/output/bcf/chr13_110581699_111677479/filtered_EUR",
+@main function main(output_prefix::String = "chr7_99354376_102496129", 
+            annot_data_path::String = "/data/abattle4/jweins17/annotations/output/chr7_99354376_102496129/variant_list_ccre_annotated_complete.parquet", 
+            ld_panel_path::String = "/data/abattle4/jweins17/LD_REF_PANEL/output/bcf/chr7_99354376_102496129/filtered_EUR",
 
-	    gwas_data_path::String = "/data/abattle4/april/hi_julia/annotations/ccre/celltypes/chr13_110581699_111677479/neale_bmi_gwas_july24.tsv",
+	    gwas_data_path::String = "/data/abattle4/april/hi_julia/annotations/ccre/celltypes/chr7_99354376_102496129/neale_bmi_gwas_july24.tsv",
 	    # model_file::String = "/data/abattle4/april/hi_julia/prs_benchmark/prsfnn/jun14_save_model_and_opt_state/output/chr13/trained_model.bson",
             model_file::String = "",
-            betas_output_file::String = "PRSFNN_out.tsv", 
+            betas_output_file::String = "PRSFNN_out_cavi.tsv", 
             interpretation_output_file::String = "nn_interpretation.tsv"; min_MAF = 0.01, train_nn = false, H = 5, max_iter = 5)
 
     @info "$(ltime()) Current block/output_prefix: $output_prefix"
@@ -52,47 +52,64 @@ This function defines the command line interface for the PRSFNN package.
     LD_reference_filtered_bed = LD_reference_filtered * ".bed"
     LD, X_sd, AF, good_variants = compute_LD(LD_reference_filtered_bed)
 
-    bim_LD_ref_filtered_SNPs = readdlm(LD_reference_filtered * ".bim")
-    bim_LD_ref_filtered_SNPs = bim_LD_ref_filtered_SNPs[:,2][good_variants]
-    good_indices = Int64[]
-    for i in 1:size(summary_stats)[1]
-        if summary_stats.SNP[i] in bim_LD_ref_filtered_SNPs
-            push!(good_indices, i)
-        end
-    end
+    LD_SNPs = CSV.read(LD_reference_filtered * ".bim", DataFrame; header = false)
+    good_LD_SNPs = LD_SNPs.Column2[good_variants]
+    intersect_SNPs = intersect(good_LD_SNPs, summary_stats.SNP)
+
+    good_indices = findall(in.(summary_stats.SNP, Ref(intersect_SNPs)))
     summary_stats = summary_stats[good_indices, :]
     annotations = annotations[good_indices, :]
-    # filter!(row -> (row.SNP in bim_LD_ref_filtered_SNPs), summary_stats)
 
-    @assert size(summary_stats)[1] == length(good_variants)
-    println("are SNP ids the same?")
-    println("$(isequal(bim_LD_ref_filtered_SNPs, summary_stats.SNP))")
+    @assert nrow(summary_stats) == length(intersect_SNPs)
+    @assert isequal(summary_stats.SNP, good_LD_SNPs)
 
-    XtX = construct_XtX(LD, X_sd[good_variants], mean(summary_stats.N[good_variants]))
+    # Main.@infiltrate
+
+    XtX = construct_XtX(LD, X_sd[good_variants], mean(summary_stats.N))
     D = construct_D(XtX)
-    Xty = construct_Xty(summary_stats.BETA[good_variants], D)
+    Xty = construct_Xty(summary_stats.BETA, D)
+
+    σ2, R2, yty = infer_σ2(
+        summary_stats.BETA, 
+        summary_stats.SE, 
+        XtX, 
+        Xty, 
+        median(summary_stats.N), 
+        length(summary_stats.BETA); 
+        estimate = true, 
+        λ = 0.50 * median(summary_stats.N)
+    )
+
+    XtX .= construct_XtX(LD, ones(length(summary_stats.SNP)), mean(summary_stats.N))
+    D .= construct_D(XtX)
+    Xty .= construct_Xty(summary_stats.BETA_std, D)
+
+    # Main.@infiltrate
 
     @assert !any(isnan.(LD))
 
     PRS = train_until_convergence(
-        summary_stats.BETA[good_variants],
-        summary_stats.SE[good_variants],
+        summary_stats.BETA_std,
+        summary_stats.SE,
         LD, # correlation matrix already filtered for good variants
         XtX,
         Xty,
-        annotations[good_variants, :],
+        annotations,
         model = model,
         opt = opt,
-        N = summary_stats.N[good_variants],
+        σ2 = σ2,
+        R2 = R2,
+        yty = yty,
+        N = summary_stats.N,
         train_nn = train_nn,
         max_iter = max_iter
     )
 
-    write_output_betas(betas_output_file, summary_stats, PRS, good_variants)
+    write_output_betas(betas_output_file, summary_stats, PRS)
 
     if train_nn
         model = PRS[4]
-        # @save model_file model opt
+        @save model_file model opt
     end
 
     # effects = interpret_model(
@@ -107,14 +124,14 @@ This function defines the command line interface for the PRSFNN package.
     return PRS
 end
 
-function write_output_betas(output_file, summary_stats, PRS, good_variants)
+function write_output_betas(output_file, summary_stats, PRS)
 
     df = DataFrame(
-        variant = summary_stats.SNP[good_variants],
+        variant = summary_stats.SNP,
         mu = PRS[1],
         alpha = PRS[2],
         # var = PRS[3],
-        ss_beta = summary_stats.BETA[good_variants]
+        ss_beta = summary_stats.BETA
     )
 
     CSV.write(output_file, df; delim = "\t")

@@ -19,6 +19,7 @@ end
 
 function construct_XtX(R::AbstractArray, X_sd::Vector{Float64}, N::Real)
     return Symmetric(X_sd .* R .* X_sd') .* N
+    # return Symmetric(R) .* N
 end
 
 function construct_Xty(coef::Vector{Float64}, D)

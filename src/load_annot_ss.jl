@@ -24,14 +24,33 @@ function load_annot_and_summary_stats(annotation_path::String, summary_statistic
     required_columns = [:SNP, :MAF, :N, :BETA, :SE, :PVALUE]
 
     summary_statistics = select(summary_statistics, required_columns)
+    summary_statistics.SNP = String.(summary_statistics.SNP)
+
+    @info "$(ltime()) Now standardizing beta"
+    summary_statistics.BETA_std = standardize_beta(
+                summary_statistics.BETA, 
+                summary_statistics.SE, 
+                summary_statistics.N,
+                summary_statistics.MAF
+    )
+
+    push!(required_columns, :BETA_std)
+
+    # @info "$(ltime()) here 1"
     delete!(summary_statistics, findall(nonunique(select(summary_statistics, [:SNP]))))
+    # @info "$(ltime()) here 2"
     summary_statistics[!, :CHR], summary_statistics[!, :BP] = unzip(extract_chr_pos.(summary_statistics[:, :SNP]))
     # TODO: we should let the user decide on the min MAF
     summary_statistics = subset(summary_statistics, :MAF => ByRow(>=(min_MAF)))
+    # @info "$(ltime()) here 3"
 
     subset_annot_summary_statistics = innerjoin(annot, summary_statistics, on = [:SNP], makeunique=true)
+    # @info "$(ltime()) here 4"
+
+    subset_annot_summary_statistics = unique(subset_annot_summary_statistics, :SNP) # takes first occurrence if multiple rows present for each SNP
 
     annot = select_annotation_columns(subset_annot_summary_statistics)
+    # @info "$(ltime()) here 5"
 
     summary_statistics = select(subset_annot_summary_statistics, required_columns)
     current_LD_block_positions = subset_annot_summary_statistics[:,:BP]
@@ -62,4 +81,10 @@ function select_annotation_columns(df::DataFrame)
     annotations = Matrix(select(df, annotation_columns))
 
     return annotations
+end
+
+function standardize_beta(BETA::Vector{Float64}, SE::Vector{Float64}, N::Vector{Int64}, MAF::Vector{Float64})
+    σ2y = median(2 .* MAF .* (1 .- MAF) .* (N .* (SE .^ 2) .+ BETA .^ 2))
+    s = sqrt.((σ2y ./ (N .* SE .^ 2 .+ BETA .^ 2)))
+    return BETA .* s
 end
