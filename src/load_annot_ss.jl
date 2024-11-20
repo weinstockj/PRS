@@ -67,7 +67,7 @@ unzip(a) = map(x->getfield.(a, x), fieldnames(eltype(a)))
 
 function get_non_annotation_columns()
 
-    non_annotation_columns = ["chrom", "start", "end", "SNP", "ref", "alt", "SNP","MAF", "N", "BETA", "SE", "PVALUE", "CHR", "BP", "variant_id", "Standard"]
+    non_annotation_columns = ["chrom", "start", "end", "SNP", "ref", "alt", "SNP","MAF", "N", "BETA", "SE", "PVALUE", "CHR", "BP", "variant_id", "Standard", "BETA_std"]
 
     return non_annotation_columns
 end

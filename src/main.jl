@@ -16,11 +16,11 @@ This function defines the command line interface for the PRSFNN package.
 
 """
 
-@main function main(output_prefix::String = "chr7_99354376_102496129", 
-            annot_data_path::String = "/data/abattle4/jweins17/annotations/output/chr7_99354376_102496129/variant_list_ccre_annotated_complete.parquet", 
-            ld_panel_path::String = "/data/abattle4/jweins17/LD_REF_PANEL/output/bcf/chr7_99354376_102496129/filtered_EUR",
+@main function main(output_prefix::String = "chr3_175214913_176977984", 
+            annot_data_path::String = "/data/abattle4/jweins17/annotations/output/chr3_175214913_176977984/variant_list_ccre_annotated_complete.parquet", 
+            ld_panel_path::String = "/data/abattle4/jweins17/LD_REF_PANEL/output/bcf/chr3_175214913_176977984/filtered_EUR",
 
-	    gwas_data_path::String = "/data/abattle4/april/hi_julia/annotations/ccre/celltypes/chr7_99354376_102496129/neale_bmi_gwas_july24.tsv",
+	    gwas_data_path::String = "/data/abattle4/april/hi_julia/annotations/ccre/celltypes/chr3_175214913_176977984/neale_bmi_gwas.tsv",
 	    # model_file::String = "/data/abattle4/april/hi_julia/prs_benchmark/prsfnn/jun14_save_model_and_opt_state/output/chr13/trained_model.bson",
             model_file::String = "",
             betas_output_file::String = "PRSFNN_out_cavi.tsv", 

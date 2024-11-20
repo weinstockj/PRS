@@ -6,8 +6,11 @@ function train_cavi(p_causal, σ2_β, coef, SE, R, XtX, Xty, to; P = 1_000, n_el
         P = length(coef)
 
         q_μ = zeros(P)
+#	q_μ = randn(P)
         q_var = ones(P) * 0.001
         q_sd = sqrt.(q_var)
+#	q_α = rand(P)
+#        q_α ./= sum(q_α)
         q_α = ones(P) .* 0.10
         q_odds = ones(P)
         SSR = ones(P)
@@ -176,8 +179,10 @@ function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, XtX
             max_iter = 1
         else
             @info "$(ltime()) Initializing prior inclusion probability and slab variance"
-            nn_p_causal = 0.01 .* ones(P)
-            nn_σ2_β = σ2 .* 0.0001 .* ones(P)
+#            nn_p_causal = 0.01 .* ones(P)
+            nn_p_causal = 0.1 .* ones(P)
+#            nn_σ2_β = σ2 .* 0.0001 .* ones(P)
+            nn_σ2_β = σ2 .* 0.001 .* ones(P)
         end
 
         if !train_nn 
@@ -197,6 +202,10 @@ function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, XtX
     for i in 1:max_iter
         @info "$(ltime()) Training outer-loop iteration $i"
         # train CAVI using set slab variance and p_causal as inputs; first round
+	println("q mu")
+	println(q_μ[1:5])
+	println("q alpha")
+	println(q_α[1:5])
         @timeit to "train_cavi" begin
            q_μ, q_α, q_var, odds, loss, loss_se = train_cavi(
                 nn_p_causal, 
