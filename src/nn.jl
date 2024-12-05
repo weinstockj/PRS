@@ -4,34 +4,6 @@ function fit_genome_wide_nn(
         n_epochs = 600, H = 3, n_test = 20, learning_rate_decay = 0.95, patience = 20
     )
 
-#    Random.seed!(123);
-
-#=
-    annotations_c, summary_stats_c, current_LD_block_positions_c = load_annot_and_summary_stats(
-                "/data/abattle4/jweins17/annotations/output/chr19_2538142_5354751/variant_list_ccre_annotated_complete.parquet",
-                "/data/abattle4/april/hi_julia/annotations/ccre/celltypes/chr19_2538142_5354751/neale_bmi_gwas.tsv",
-                min_MAF = 0.05
-            )
-
-    SNPs_count = size(annotations_c, 1)
-    @info "$(ltime()) Number of SNPs in chr19_2538142_5354751 block: $SNPs_count"
-
-    LD, X_sd, AF, good_variants = compute_LD("/home/akim126/data-abattle4/april/hi_julia/prs_benchmark/full_check/prsfnn/full_run/output/chr19_2538142_5354751/LD_output/filtered.bed")
-
-    LD_SNPs = CSV.read("/home/akim126/data-abattle4/april/hi_julia/prs_benchmark/full_check/prsfnn/full_run/output/chr19_2538142_5354751/LD_output/filtered" * ".bim", DataFrame; header = false)
-    good_LD_SNPs = LD_SNPs.Column2[good_variants]
-    intersect_SNPs = intersect(good_LD_SNPs, summary_stats_c.SNP)
-
-    good_indices = findall(in.(summary_stats_c.SNP, Ref(intersect_SNPs)))
-    summary_stats_c = summary_stats_c[good_indices, :]
-    annotations_c = annotations_c[good_indices, :]
-
-    df_keep_track_slab_var = DataFrame()
-    df_keep_track_p_causal = DataFrame()
-    df_keep_track_slab_var[!, "snps"] = summary_stats_c.SNP 
-    df_keep_track_p_causal[!, "snps"] = summary_stats_c.SNP 
-=#
-
     summary_statistics = CSV.read(betas, DataFrame; delim = "\t")
     summary_statistics = rename!(summary_statistics, :variant => :variant_id)
     parquets = return_parquets(annotation_files_dir)
@@ -50,12 +22,9 @@ function fit_genome_wide_nn(
     opt = Flux.setup(optim_type, model)
     @info "$(ltime()) Training model with $K annotations"
 
-#    training_parquets = parquets[rand(1:length(parquets), n_epochs)]
     training_parquets = parquets[sample(1:length(parquets), n_epochs, replace = false)]
     test_parquets     = setdiff(parquets, training_parquets)[rand(1:(length(parquets) - n_epochs), n_test)]
 
-#    println("TRAINING PARQUETS: ")
-#    println(training_parquets[1:8])
     test_annotations = vcat([DataFrame(Parquet2.Dataset(x); copycols=false) for x in test_parquets]...)
     test_df        = innerjoin(test_annotations, summary_statistics, on = [:variant_id], makeunique=true)
     test_SNPs      = test_df.variant_id
@@ -119,10 +88,6 @@ function fit_genome_wide_nn(
 	    best_opt = deepcopy(opt)
             best_model_epoch = i
             count_since_best = 0
-#	    nn_σ2_β, nn_p_causal = predict_with_nn(model, Float32.(annotations_c))
-#	    colname = "epoch_$i"
-#	    df_keep_track_slab_var[!, colname] = nn_σ2_β
-‹	    df_keep_track_p_causal[!, colname] = nn_p_causal
         else
             count_since_best += 1
             Flux.adjust!(opt, opt.layers[1].weight.rule.opts[1].eta * learning_rate_decay)
@@ -163,9 +128,6 @@ function fit_genome_wide_nn(
     @save model_file model opt
 
     @info "$(ltime()) Best model and opt state taken from Epoch $best_model_epoch."
-
-#    CSV.write("slab_var_0.0001_600_20_relative_increase.txt", df_keep_track_slab_var; delim = "\t")
-#    CSV.write("p_causal_0.0001_600_20_relative_increase.txt", df_keep_track_p_causal; delim = "\t")
 
     return model, opt, train_losses, test_losses, setdiff(names(test_annotations), get_non_annotation_columns())
 end

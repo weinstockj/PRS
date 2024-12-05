@@ -22,6 +22,7 @@ This function defines the command line interface for the PRSFNN package.
 
 	    gwas_data_path::String = "/data/abattle4/april/hi_julia/annotations/ccre/celltypes/chr3_175214913_176977984/neale_bmi_gwas.tsv",
 	    # model_file::String = "/data/abattle4/april/hi_julia/prs_benchmark/prsfnn/jun14_save_model_and_opt_state/output/chr13/trained_model.bson",
+            # model_file::String = "/data/abattle4/april/hi_julia/prs_benchmark/full_check/prsfnn/full_run_1.5_adj_nn_slab_var_and_p_causal/output/trained_model.bson",
             model_file::String = "",
             betas_output_file::String = "PRSFNN_out_cavi.tsv", 
             interpretation_output_file::String = "nn_interpretation.tsv"; min_MAF = 0.01, train_nn = false, H = 5, max_iter = 5)
@@ -63,7 +64,6 @@ This function defines the command line interface for the PRSFNN package.
     @assert nrow(summary_stats) == length(intersect_SNPs)
     @assert isequal(summary_stats.SNP, good_LD_SNPs)
 
-    # Main.@infiltrate
 
     XtX = construct_XtX(LD, X_sd[good_variants], mean(summary_stats.N))
     D = construct_D(XtX)
@@ -108,7 +108,7 @@ This function defines the command line interface for the PRSFNN package.
     write_output_betas(betas_output_file, summary_stats, PRS)
 
     if train_nn
-        model = PRS[4]
+        model = PRS[5]
         @save model_file model opt
     end
 
@@ -130,6 +130,7 @@ function write_output_betas(output_file, summary_stats, PRS)
         variant = summary_stats.SNP,
         mu = PRS[1],
         alpha = PRS[2],
+        mu_spike = PRS[3],
         # var = PRS[3],
         ss_beta = summary_stats.BETA
     )

@@ -6,9 +6,11 @@ function train_cavi(p_causal, σ2_β, coef, SE, R, XtX, Xty, to; P = 1_000, n_el
         P = length(coef)
 
         q_μ = zeros(P)
-#	q_μ = randn(P)
+        q_spike_μ = zeros(P)
         q_var = ones(P) * 0.001
+        q_spike_var = ones(P) * 0.001
         q_sd = sqrt.(q_var)
+        q_spike_sd = sqrt.(q_spike_var)
 #	q_α = rand(P)
 #        q_α ./= sum(q_α)
         q_α = ones(P) .* 0.10
@@ -17,7 +19,9 @@ function train_cavi(p_causal, σ2_β, coef, SE, R, XtX, Xty, to; P = 1_000, n_el
         σ2 = 1.0
 
         q_μ_best = copy(q_μ)
+        q_spike_μ_best = copy(q_spike_μ)
         q_var_best = copy(q_var)
+        q_spike_var_best = copy(q_spike_var)
         q_α_best = copy(q_α)
         q_odds_best = copy(q_odds)
 
@@ -65,8 +69,10 @@ function train_cavi(p_causal, σ2_β, coef, SE, R, XtX, Xty, to; P = 1_000, n_el
         end
 
         q_μ_best = copy(q_μ)
+        q_spike_μ_best = copy(q_spike_μ)
         q_α_best = copy(q_α)
         q_var_best = copy(q_var)
+        q_spike_var_best = copy(q_spike_var)
         q_odds_best = copy(q_odds)
         best_loss = copy(mean_loss)
         best_se_loss = copy(se_loss)
@@ -77,11 +83,16 @@ function train_cavi(p_causal, σ2_β, coef, SE, R, XtX, Xty, to; P = 1_000, n_el
 
         @info "$(ltime()) CAVI updates at iteration $i"
         @timeit to "update q_var" q_var .= σ2 ./ (diag(XtX) .+ 1 ./ σ2_β) ## ak: eq 8; \s^2_k; does not depend on alpha and mu from previous
+        @timeit to "update q_spike_var" q_spike_var .= σ2 ./ (diag(XtX) .+ 1 ./ spike_σ2) ## ak: eq 8; \s^2_k; does not depend on alpha and mu from previous
         @timeit to "update q_sd" q_sd .= sqrt.(q_var)
+        @timeit to "update q_spike_sd" q_spike_sd .= sqrt.(q_spike_var)
         @timeit to "update q_μ" begin
             @inbounds @fastmath for k in 1:P
                 J = setdiff(1:P, k)
-                q_μ[k] = (view(q_var, k) ./ σ2) .* (view(Xty, k) .- sum(view(XtX, k, J) .* view(q_α, J) .* view(q_μ, J))) ## ak: eq 9; update u_k
+                q_μ[k] = (view(q_var, k) ./ σ2) .* 
+                (view(Xty, k) .- sum(view(XtX, k, J) .* view(q_α, J) .* view(q_μ, J) .+ view(1.0 .- q_α, J) .* view(q_spike_μ, k))) ## ak: eq 9; update u_k
+                q_spike_μ[k] = (view(q_spike_var, k) ./ σ2) .* 
+                (view(Xty, k) .- sum(view(XtX, k, J) .* view(q_α, J) .* view(q_μ, J) .+ view(1.0 .- q_α, J) .* view(q_spike_μ, k))) ## ak: eq 9; update u_k
             end
         end
         @timeit to "update SSR" SSR .= q_μ .^ 2 ./ q_var
@@ -103,7 +114,7 @@ function train_cavi(p_causal, σ2_β, coef, SE, R, XtX, Xty, to; P = 1_000, n_el
 
     @info "$(ltime()) CAVI updates finished"
 
-    return q_μ_best, q_α_best, q_var_best, q_odds_best, best_loss, best_se_loss
+    return q_μ_best, q_spike_μ_best, q_α_best, q_var_best, q_odds_best, best_loss, best_se_loss
 end
 
 """
@@ -161,11 +172,13 @@ function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, XtX
         @info "$(ltime()) Initializing..."
         P = length(coef)
         q_μ = zeros(P)
+        q_spike_μ = zeros(P)
         q_α = ones(P) .* 0.01
         # L = sum(q_α)
         q_var = ones(P) * 0.001
 
         cavi_q_μ = copy(q_μ) # zeros(P)
+        cavi_q_spike_μ = copy(q_spike_μ) # zeros(P)
         cavi_q_var = copy(q_var) # ones(P) * 0.001
         cavi_q_α = copy(q_α) # ones(P) .* 0.10
 
@@ -202,12 +215,8 @@ function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, XtX
     for i in 1:max_iter
         @info "$(ltime()) Training outer-loop iteration $i"
         # train CAVI using set slab variance and p_causal as inputs; first round
-	println("q mu")
-	println(q_μ[1:5])
-	println("q alpha")
-	println(q_α[1:5])
         @timeit to "train_cavi" begin
-           q_μ, q_α, q_var, odds, loss, loss_se = train_cavi(
+           q_μ, q_spike_μ, q_α, q_var, odds, loss, loss_se = train_cavi(
                 nn_p_causal, 
                 nn_σ2_β, 
                 coef, 
@@ -269,6 +278,7 @@ function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, XtX
         ## ak: Set α(i) =α and μ(i) =μ
         L = sum(q_α)
         cavi_q_μ = copy(q_μ)
+        cavi_q_spike_μ = copy(q_spike_μ)
         cavi_q_α = copy(q_α)
         # cavi_q_var = copy(q_var)
         # cavi_q_marginal_var = compute_marginal_variance(q_μ, q_var, q_α)
@@ -321,10 +331,10 @@ function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, XtX
     @info "$(ltime()) Training finished"
 
     if train_nn
-        return cavi_q_μ, cavi_q_α, cavi_q_var, prev_model
+        return cavi_q_μ, cavi_q_α, cavi_q_spike_μ, cavi_q_var, prev_model
     else
         # return cavi_q_μ, cavi_q_α, cavi_q_var, model
-        return cavi_q_μ, cavi_q_α, model
+        return cavi_q_μ, cavi_q_α, cavi_q_spike_μ, model
     end
 end
 
