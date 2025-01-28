@@ -6,7 +6,6 @@ function load_annot_and_summary_stats(annotation_path::String, summary_statistic
 #    annot.Chromatin_accessibility = Int8.(annot[!, :Chromatin_accessibility])
 #    annot.QTL = Int8.(annot[!, :QTL])
 #    annot.PWM = Int8.(annot[!, :PWM])
-    annot = fill_in_missing_annot_cols(annot) 
     rename!(annot,:variant_id => :SNP)
 
 #    annotation_columns = names(annot)

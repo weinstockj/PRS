@@ -25,7 +25,8 @@ This function defines the command line interface for the PRSFNN package.
             # model_file::String = "/data/abattle4/april/hi_julia/prs_benchmark/full_check/prsfnn/full_run_1.5_adj_nn_slab_var_and_p_causal/output/trained_model.bson",
             model_file::String = "",
             betas_output_file::String = "PRSFNN_out_cavi.tsv", 
-            interpretation_output_file::String = "nn_interpretation.tsv"; min_MAF = 0.01, train_nn = false, H = 5, max_iter = 5)
+            interpretation_output_file::String = "nn_interpretation.tsv",
+            first_stage_rv_file::String = "PRSFNN_out_initial.tsv"; min_MAF = 0.01, train_nn = false, H = 5, max_iter = 5)
 
     @info "$(ltime()) Current block/output_prefix: $output_prefix"
     annotations, summary_stats, current_LD_block_positions = load_annot_and_summary_stats(
@@ -88,6 +89,12 @@ This function defines the command line interface for the PRSFNN package.
 
     @assert !any(isnan.(LD))
 
+    if isfile(first_stage_rv_file)
+        calculated_σ2 = CSV.read(first_stage_rv_file, DataFrame)
+        σ2 = calculated_σ2.global_sigma2[1]       
+        @info "$(ltime()) Calculating and passing global residual variance $(round(σ2; digits = 2)) after NN tratining."
+    end
+
     PRS = train_until_convergence(
         summary_stats.BETA_std,
         summary_stats.SE,
@@ -105,10 +112,12 @@ This function defines the command line interface for the PRSFNN package.
         max_iter = max_iter
     )
 
-    write_output_betas(betas_output_file, summary_stats, PRS)
+    write_output_betas(betas_output_file, summary_stats, PRS, output_prefix)
+    # write_output_residual_variance(betas_output_file, PRS, output_prefix)
 
     if train_nn
-        model = PRS[5]
+        #model = PRS[5]
+        model = PRS[6]
         @save model_file model opt
     end
 
@@ -124,7 +133,7 @@ This function defines the command line interface for the PRSFNN package.
     return PRS
 end
 
-function write_output_betas(output_file, summary_stats, PRS)
+function write_output_betas(output_file, summary_stats, PRS, ld_block_name)
 
     df = DataFrame(
         variant = summary_stats.SNP,
@@ -132,7 +141,13 @@ function write_output_betas(output_file, summary_stats, PRS)
         alpha = PRS[2],
         mu_spike = PRS[3],
         # var = PRS[3],
-        ss_beta = summary_stats.BETA
+        ss_beta = summary_stats.BETA,
+	nn_sigma_beta = PRS[4],
+	nn_p_causal = PRS[5],
+        block = ld_block_name,
+        block_residual_variance = PRS[6],
+        block_size = length(PRS[1]),
+	var = PRS[4]
     )
 
     CSV.write(output_file, df; delim = "\t")
@@ -153,3 +168,19 @@ function return_parquets(dir)
 
     return all_parquets
 end
+
+function write_output_residual_variance(output_file, PRS, ld_block_name)
+
+    output_file = split(output_file, ".")[1] * "residual_variance.tsv"
+
+    df = DataFrame(
+        block = ld_block_name,
+        block_residual_variance = PRS[6],
+        block_size = length(PRS[1])
+    )
+
+    CSV.write(output_file, df; delim = "\t")
+
+end
+
+

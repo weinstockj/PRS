@@ -7,7 +7,7 @@ end
     log_prior(β, σ2_β, p_causal)
     Calculates the log density of β based on a spike and slab prior
 """
-function log_prior(β::Vector, σ2_β::Vector, p_causal::Vector, σ2::Real, to; spike_σ2 = 1e-8)
+function log_prior(β::Vector, σ2_β::Vector, p_causal::Vector, σ2::Real, spike_σ2::Real, to) #; spike_σ2 = 1e-8) 
 
     P = length(β)
     slab_dist = Normal.(0, sqrt(σ2) .* sqrt.(σ2_β .+ spike_σ2))
@@ -93,7 +93,7 @@ joint_log_prob(
 """
 joint_log_prob(β::Vector, coef::Vector, SE::Vector, R::Matrix, σ2_β::Vector, p_causal::Vector, σ2::Real, to) = rss(β, coef, SE, R, to) + log_prior(β, σ2_β, p_causal, σ2, to)
 
-joint_log_prob(β::Vector, coef::Vector, Σ::AbstractPDMat, SRSinv::Matrix, σ2_β::Vector, p_causal::Vector, σ2::Real, to) = rss(β, coef, Σ, SRSinv, to) + log_prior(β, σ2_β, p_causal, σ2, to)
+joint_log_prob(β::Vector, coef::Vector, Σ::AbstractPDMat, SRSinv::Matrix, σ2_β::Vector, p_causal::Vector, σ2::Real, spike_σ2::Real, to) = rss(β, coef, Σ, SRSinv, to) + log_prior(β, σ2_β, p_causal, σ2, spike_σ2, to)
 
 """
     elbo(z, q_μ, log_q_var, coef, SE, R, σ2_β, p_causal)
@@ -125,14 +125,14 @@ function elbo(z::Vector, q_μ::Vector, log_q_var::Vector, coef::Vector, SE::Vect
     return (jl - q)
 end
 
-function elbo(z::Vector, q_μ::Vector, log_q_var::Vector, coef::Vector, Σ::AbstractPDMat, SRSinv::Matrix, σ2_β::Vector, p_causal::Vector, σ2::Real, to)
+function elbo(z::Vector, q_μ::Vector, log_q_var::Vector, coef::Vector, Σ::AbstractPDMat, SRSinv::Matrix, σ2_β::Vector, p_causal::Vector, σ2::Real, spike_σ2::Real, to)
     q_var = @timeit to "q_var" exp.(log_q_var)
     q = @timeit to "q" MvNormal(q_μ, Diagonal(q_var))
     q_sd = @timeit to "q_sd" sqrt.(q_var)
     ϕ = @timeit to "ϕ" q_μ .+ q_sd .* z
     # γ = compute_γ(q_μ, q_var)   
     # jl =  joint_log_prob(γ .* ϕ, coef, SE, R) 
-    jl =  @timeit to "joint_log_prob" joint_log_prob(ϕ, coef, Σ, SRSinv, σ2_β, p_causal, σ2, to) 
+    jl =  @timeit to "joint_log_prob" joint_log_prob(ϕ, coef, Σ, SRSinv, σ2_β, p_causal, σ2, spike_σ2, to) 
     q = @timeit to "logpd" logpdf(q, ϕ)
     # jac = prod(z)
     return (jl - q)

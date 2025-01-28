@@ -1,4 +1,4 @@
-function train_cavi(p_causal, σ2_β, coef, SE, R, XtX, Xty, to; P = 1_000, n_elbo = 10, max_iter = 5, N = 10_000, yty = 10_000, spike_σ2 = 1e-5)
+function train_cavi(p_causal, σ2_β, coef, SE, R, XtX, Xty, to; P = 1_000, n_elbo = 10, max_iter = 5, N = 10_000, yty = 10_000, spike_σ2 = 1e-6, update_σ2 = true, σ2 = 1.0) #spike_σ2 = 1e-5
    
     @timeit to "initialize" begin
         @info "$(ltime()) Initializing CAVI..."
@@ -16,7 +16,9 @@ function train_cavi(p_causal, σ2_β, coef, SE, R, XtX, Xty, to; P = 1_000, n_el
         q_α = ones(P) .* 0.10
         q_odds = ones(P)
         SSR = ones(P)
-        σ2 = 1.0
+        if (update_σ2 == true)
+  	    σ2 = 1.0
+	end
 
         q_μ_best = copy(q_μ)
         q_spike_μ_best = copy(q_spike_μ)
@@ -24,6 +26,7 @@ function train_cavi(p_causal, σ2_β, coef, SE, R, XtX, Xty, to; P = 1_000, n_el
         q_spike_var_best = copy(q_spike_var)
         q_α_best = copy(q_α)
         q_odds_best = copy(q_odds)
+	σ2_best = σ2
 
         mean_loss = -Inf
         best_loss = -Inf
@@ -44,9 +47,10 @@ function train_cavi(p_causal, σ2_β, coef, SE, R, XtX, Xty, to; P = 1_000, n_el
 
         elbo_loss = Float32[]
         @timeit to "elbo estimate" begin
+            @info "$(ltime()) current σ2 for elbo estimate = $(σ2)"
             @inbounds for z in 1:n_elbo
                 z = rand(Normal(0, 1), P)
-                push!(elbo_loss, elbo(z, q_μ, log.(q_var), coef, Σ_reg, SRSinv, σ2_β, p_causal, σ2, to))
+                push!(elbo_loss, elbo(z, q_μ, log.(q_var), coef, Σ_reg, SRSinv, σ2_β, p_causal, σ2, spike_σ2, to))
             end
         end
      
@@ -61,10 +65,12 @@ function train_cavi(p_causal, σ2_β, coef, SE, R, XtX, Xty, to; P = 1_000, n_el
         end
 
         # @info "$(ltime()) iteration $i, loss = $(round(loss; digits = 2)) (bigger numbers are better)"  
-        @info "$(ltime()) iteration $i, ELBO CI = [$(round(loss_lower_ci; digits = 2)), $(round(loss_upper_ci; digits = 2))]  (bigger numbers are better)"  
+        @info "$(ltime()) iteration $i, ELBO CI = [$(round(loss_lower_ci; digits = 2)), $(round(loss_upper_ci; digits = 2))]  (bigger numbers are better)" 
+#	@info "$(ltime()) current best loss = $(best_loss)"
         # ak: added a small constant to avoid division by zero
         if best_loss > loss_lower_ci 
             @info "$(ltime()) Insufficient ELBO improvement. Stopping at iteration $i and returning parameter estimates from iteration $(i-1)."
+#            @info "$(ltime()) Best loss = $(best_loss), loss lower ci = $(loss_lower_ci)."
             break
         end
 
@@ -76,6 +82,7 @@ function train_cavi(p_causal, σ2_β, coef, SE, R, XtX, Xty, to; P = 1_000, n_el
         q_odds_best = copy(q_odds)
         best_loss = copy(mean_loss)
         best_se_loss = copy(se_loss)
+	σ2_best = σ2
 
         @timeit to "push cavi loss" push!(cavi_loss, Float32(mean_loss))
 
@@ -90,9 +97,9 @@ function train_cavi(p_causal, σ2_β, coef, SE, R, XtX, Xty, to; P = 1_000, n_el
             @inbounds @fastmath for k in 1:P
                 J = setdiff(1:P, k)
                 q_μ[k] = (view(q_var, k) ./ σ2) .* 
-                (view(Xty, k) .- sum(view(XtX, k, J) .* view(q_α, J) .* view(q_μ, J) .+ view(1.0 .- q_α, J) .* view(q_spike_μ, k))) ## ak: eq 9; update u_k
+		(view(Xty, k) .- sum(view(XtX, k, J) .* (view(q_α, J) .* view(q_μ, J) .+ view(1.0 .- q_α, J) .* view(q_spike_μ, J))))
                 q_spike_μ[k] = (view(q_spike_var, k) ./ σ2) .* 
-                (view(Xty, k) .- sum(view(XtX, k, J) .* view(q_α, J) .* view(q_μ, J) .+ view(1.0 .- q_α, J) .* view(q_spike_μ, k))) ## ak: eq 9; update u_k
+                (view(Xty, k) .- sum(view(XtX, k, J) .* (view(q_α, J) .* view(q_μ, J) .+ view(1.0 .- q_α, J) .* view(q_spike_μ, J)))) ## ak: eq 9; update u_k
             end
         end
         @timeit to "update SSR" SSR .= q_μ .^ 2 ./ q_var
@@ -100,21 +107,24 @@ function train_cavi(p_causal, σ2_β, coef, SE, R, XtX, Xty, to; P = 1_000, n_el
         @timeit to "update q_odds" q_odds .= (p_causal ./ (1 .- p_causal)) .* q_sd ./ sqrt.(σ2_β .* σ2) .* exp.(SSR ./ 2.0) ## ak: eq 10; update a_k 
         @timeit to "update q_α" q_α .= q_odds ./ (1.0 .+ q_odds)
 
-        @timeit to "update σ2" begin
-            # Main.@infiltrate
-            a = (1 + median(N) + P) / 2 
-            # Dt =  Diagonal(q_α ./ σ2_β .+ (1.0 .- q_α) ./ spike_σ2)
-            # b = (1.0 + yty - 2 * sum(q_μ .* Xty) + q_μ' * XtX * q_μ + q_μ' * Dt * q_μ) / 2
-            b = (1.0 + yty - 2 * sum(q_μ .* Xty) + q_μ' * XtX * q_μ) / 2
-            error_dist = InverseGamma(a, b)
-            σ2 = mean(error_dist)
-            @info "$(ltime()) σ2 estimate = $(round(σ2; digits = 3))"
-        end
+	if (update_σ2 == true)
+            @timeit to "update σ2" begin
+	        @info "$(ltime()) σ2 is being updated."
+                # Main.@infiltrate
+                a = (1 + median(N) + P) / 2 
+                # Dt =  Diagonal(q_α ./ σ2_β .+ (1.0 .- q_α) ./ spike_σ2)
+                # b = (1.0 + yty - 2 * sum(q_μ .* Xty) + q_μ' * XtX * q_μ + q_μ' * Dt * q_μ) / 2
+                b = (1.0 + yty - 2 * sum(q_μ .* Xty) + q_μ' * XtX * q_μ) / 2
+                error_dist = InverseGamma(a, b)
+                σ2 = mean(error_dist)
+                @info "$(ltime()) σ2 estimate = $(round(σ2; digits = 3))"
+            end
+	end
     end
 
     @info "$(ltime()) CAVI updates finished"
 
-    return q_μ_best, q_spike_μ_best, q_α_best, q_var_best, q_odds_best, best_loss, best_se_loss
+    return q_μ_best, q_spike_μ_best, q_α_best, q_var_best, q_odds_best, best_loss, best_se_loss, σ2_best
 end
 
 """
@@ -164,7 +174,7 @@ end
     - `G::AbstractArray`: A P x K matrix of annotations
     
 """
-function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, XtX::AbstractArray, Xty::Vector, G::AbstractArray; model = model, opt = opt, max_iter = 4, threshold = 0.2, train_nn = true, N = 10_000, yty = 300_000, σ2 = 1.0, R2 = 0.01) 
+function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, XtX::AbstractArray, Xty::Vector, G::AbstractArray; model = model, opt = opt, max_iter = 4, threshold = 0.2, train_nn = true, N = 10_000, yty = 300_000, σ2 = 1.0, R2 = 0.01, update_σ2 = true) 
 
     to = TimerOutput()
     ## initialize
@@ -176,20 +186,24 @@ function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, XtX
         q_α = ones(P) .* 0.01
         # L = sum(q_α)
         q_var = ones(P) * 0.001
+	updated_σ2 = σ2
 
         cavi_q_μ = copy(q_μ) # zeros(P)
         cavi_q_spike_μ = copy(q_spike_μ) # zeros(P)
         cavi_q_var = copy(q_var) # ones(P) * 0.001
         cavi_q_α = copy(q_α) # ones(P) .* 0.10
+	cavi_updated_σ2 = updated_σ2
 
         # @timeit to "inferring σ2" σ2, R2, yty = infer_σ2(coef, SE, XtX, Xty, median(N), P; estimate = true, λ = 0.50 * median(N))
         @info "$(ltime()) Estimated σ2 = $(round(σ2; digits = 2)), h2 = $(round(R2; digits = 2))"
 
         if (model != nothing) & !train_nn
             @info "$(ltime()) Resetting max_iter from $max_iter to 1 because the nn is frozen"
-            nn_σ2_β, nn_p_causal = predict_with_nn(model, Float32.(G))
+            @info "$(ltime()) Confirming global residual variance $(round(σ2; digits = 2))."
+	    nn_σ2_β, nn_p_causal = predict_with_nn(model, Float32.(G))
             nn_σ2_β = nn_σ2_β .* σ2
             max_iter = 1
+	    update_σ2 = false
         else
             @info "$(ltime()) Initializing prior inclusion probability and slab variance"
 #            nn_p_causal = 0.01 .* ones(P)
@@ -216,7 +230,7 @@ function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, XtX
         @info "$(ltime()) Training outer-loop iteration $i"
         # train CAVI using set slab variance and p_causal as inputs; first round
         @timeit to "train_cavi" begin
-           q_μ, q_spike_μ, q_α, q_var, odds, loss, loss_se = train_cavi(
+            q_μ, q_spike_μ, q_α, q_var, odds, loss, loss_se, updated_σ2 = train_cavi(
                 nn_p_causal, 
                 nn_σ2_β, 
                 coef, 
@@ -228,6 +242,8 @@ function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, XtX
                 P = P,
                 N = N,
                 yty = yty,
+		update_σ2 = update_σ2,
+		σ2 = σ2
             )
             @info "$(ltime()) Training CAVI finished"
         end
@@ -282,6 +298,7 @@ function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, XtX
         cavi_q_α = copy(q_α)
         # cavi_q_var = copy(q_var)
         # cavi_q_marginal_var = compute_marginal_variance(q_μ, q_var, q_α)
+	    cavi_updated_σ2 = updated_σ2
 
         @info "q_μ / sqrt(σ2)"
         describe_vector(q_μ ./ sqrt(σ2))
@@ -331,10 +348,10 @@ function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, XtX
     @info "$(ltime()) Training finished"
 
     if train_nn
-        return cavi_q_μ, cavi_q_α, cavi_q_spike_μ, cavi_q_var, prev_model
+        return cavi_q_μ, cavi_q_α, cavi_q_spike_μ, nn_σ2_β, nn_p_causal, cavi_updated_σ2, prev_model  #, cavi_q_var
     else
         # return cavi_q_μ, cavi_q_α, cavi_q_var, model
-        return cavi_q_μ, cavi_q_α, cavi_q_spike_μ, model
+        return cavi_q_μ, cavi_q_α, cavi_q_spike_μ, nn_σ2_β, nn_p_causal, cavi_updated_σ2 #model
     end
 end
 
@@ -408,3 +425,4 @@ function train_gibbs(p_causal, σ2_β, coef, SE, R, XtX, Xty, to; P = 1_000, max
     # return vec(mean(β_draw[:, warmup:thin:max_iter], dims = 2)), vec(mean(γt[:, warmup:thin:max_iter], dims = 2)), α, mean(σ2t[warmup:thin:max_iter])
     return vec(mean(β_draw[:, warmup:thin:max_iter], dims = 2)), vec(mean(γt[:, warmup:thin:max_iter], dims = 2)), α
 end
+
