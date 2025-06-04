@@ -45,7 +45,7 @@ include("load_annot_ss.jl")
 include("utils.jl")
 include("nn.jl")
 
-export joint_lob_prob, RSS, elbo, train_until_convergence, main
+export joint_lob_prob, RSS, elbo, train_until_convergence, main, fit_genome_wide_nn, train_cavi, infer_σ2
 
 # speed up precompilation for end users
 #@precompile_setup begin

@@ -4,7 +4,7 @@ end
 
 
 """
-    log_prior(β, σ2_β, p_causal)
+    log_prior(β, σ2_β, p_causal, σ2, spike_σ2, to)
     Calculates the log density of β based on a spike and slab prior
 """
 function log_prior(β::Vector, σ2_β::Vector, p_causal::Vector, σ2::Real, spike_σ2::Real, to) #; spike_σ2 = 1e-8) 
@@ -27,20 +27,7 @@ function log_prior(β::Vector, σ2_β::Vector, p_causal::Vector, σ2::Real, spik
     return sum(logprob)
 end
 
-"""
-    rss(β, coef, SE, R)
-    Calculate the summary statistic RSS likelihood
 
-
-```julia-repl
-rss(
-    [0.0011, .0052, 0.0013],
-    [-0.019, 0.013, -.0199],
-    [.0098, .0098, .0102],
-    [1.0 .03 .017; .031 1.0 -0.03; .017 -0.02 1.0]
-)
-```
-"""
 #=
 function rss(β::Vector, coef::Vector, SE::Vector, R::AbstractArray, to; λ = 1e-8)
     # .000349, 23 allocations no turbo with P = 100
@@ -68,6 +55,20 @@ function rss(β::Vector, coef::Vector, SE::Vector, R::AbstractArray, to; λ = 1e
 end
 =#
 
+"""
+    rss(β, coef, SE, R)
+    Calculate the summary statistic RSS likelihood
+
+
+```julia-repl
+rss(
+    [0.0011, .0052, 0.0013],
+    [-0.019, 0.013, -.0199],
+    [.0098, .0098, .0102],
+    [1.0 .03 .017; .031 1.0 -0.03; .017 -0.02 1.0]
+)
+```
+"""
 function rss(β::Vector, coef::Vector, Σ::AbstractPDMat, SRSinv::Matrix, to)
 
     μ = @timeit to "update μ within rss" @fastmath SRSinv * β

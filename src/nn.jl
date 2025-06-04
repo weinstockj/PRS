@@ -1,6 +1,27 @@
+"""
+    fit_genome_wide_nn(betas, annotation_files_dir, model_file; n_epochs, H, n_test, learning_rate_decay, patience)
+
+Train a neural network model to predict variant effects using genome-wide annotation data.
+
+# Arguments
+- `betas`: Path to file containing PRS beta values from previous analysis
+- `annotation_files_dir`: Directory containing annotation parquet files
+- `model_file`: Path where the trained model will be saved
+- `n_epochs`: Number of training epochs (default: 1306)
+- `H`: Number of hidden units in the neural network (default: 3)
+- `n_test`: Number of test samples to use for evaluation (default: 30)
+- `learning_rate_decay`: Learning rate decay factor (default: 0.98)
+- `patience`: Number of epochs to wait before reducing learning rate (default: 30)
+
+# Returns
+- `model`: The trained neural network model
+- `opt`: The optimizer state
+- `global_σ2`: Global residual variance estimate
+"""
 function fit_genome_wide_nn(
         betas = "/data/abattle4/april/hi_julia/prs_benchmark/prsfnn/jun22_adaptive_learning_rate/output/PRSFNN_out_final.tsv",
-        annotation_files_dir = "/data/abattle4/jweins17/annotations/output/", model_file = "trained_model.bson";
+        annotation_files_dir = "/data/abattle4/jweins17/annotations/output/", 
+        model_file = "trained_model.bson";
         n_epochs = 1306, H = 3, n_test = 30, learning_rate_decay = 0.98, patience = 30
     )
 
@@ -87,9 +108,9 @@ function fit_genome_wide_nn(
 
         push!(test_losses, test_loss)
 
-	if i == 1
-	    best_loss = test_loss
-	end
+        if i == 1
+            best_loss = test_loss
+        end
 
         if test_loss < best_loss
 #	if (best_loss - test_loss) / best_loss > 0.002
@@ -120,7 +141,7 @@ function fit_genome_wide_nn(
     copied_params = Flux.params(best_model)
     all_equal = all(map(==, original_params, copied_params))
 
-    if all_equal == true
+    if all_equal
         @info "$(ltime()) Either training took place until the end or the best_model is not properly saved."
     end
 
@@ -131,7 +152,7 @@ function fit_genome_wide_nn(
     copied_params = Flux.params(best_model)
     all_equal = all(map(==, original_params, copied_params))
 
-    if all_equal == false
+    if !all_equal
         @info "$(ltime()) Model being saved is not the best model."
     end
 
@@ -183,8 +204,8 @@ function fit_heritability_nn(model, opt, q_μ_sq, q_α, G, i=1; max_epochs=3000,
     #λ = 1e-6
     println("----------------------------------------------------------------")
     @info "$(ltime()) Now training the neural network"
-    @info "$(ltime()) MIN FLOAT32 Q MU SQ: $(minimum(Float32.(q_μ_sq)))"
-    @info "$(ltime()) MAX FLOAT32 Q MU SQ: $(maximum(Float32.(q_μ_sq)))"
+    # @info "$(ltime()) MIN FLOAT32 Q MU SQ: $(minimum(Float32.(q_μ_sq)))"
+    # @info "$(ltime()) MAX FLOAT32 Q MU SQ: $(maximum(Float32.(q_μ_sq)))"
     q_μ_sq = clamp_nn_fit_h_nn(q_μ_sq)
 
     best_ks_statistic = Inf
@@ -233,11 +254,6 @@ function fit_heritability_nn(model, opt, q_μ_sq, q_α, G, i=1; max_epochs=3000,
     best_model_epoch = 1
     train_losses = Float64[]
     test_losses = Float64[]
-
-    # check_no_nan(data[1])
-
-    # @show model.layers[1].weight
-    # @show model.layers[1].bias
 
     @inbounds for epoch in 1:max_epochs
         train!(nn_loss, model, DL, opt)
@@ -295,8 +311,6 @@ function fit_heritability_nn(model, opt, q_μ_sq, q_α, G, i=1; max_epochs=3000,
 end
 
 function calculate_global_residual_variance(residual_variances)
-    #weighted_residual_variance = sum(residual_variances.block_residual_variance .* residual_variances.block_size) / sum(residual_variances.block_size)
-    #return weighted_residual_variance
     minimum_residual_variance = minimum(residual_variances.block_residual_variance)
     return minimum_residual_variance
 end
@@ -323,8 +337,6 @@ function find_max_activation(layer, K)
 end
 
 function predict_with_nn(model, G)
-    #λ = 1e-6
-    neg_indices = []
     outputs = model(transpose(G))
     nn_σ2_β = exp.(outputs[1, :])
     nn_p_causal = Flux.σ.(outputs[2, :]) 
@@ -336,19 +348,13 @@ function nn_loss(model, G, y; w_σ2β = 1.0, w_p_causal = 1.0) ## ak: need two l
 
     yhat = model(G)
     σ2β_mse = @views Flux.mse(yhat[1, :], y[1, :])
-    # σ2β_dist = @views -sum(invgamma_logpdf.(exp.(yhat[1, :]), α = 10.0, θ = 1.0)) 
 
 
-    # loss_σ2β = σ2β_mse + σ2β_dist / 100
     loss_σ2β = σ2β_mse 
     p_causal_mse = @views Flux.mse(yhat[2, :], y[2, :])
-    # p_causal_dist = @views -sum(beta_logpdf.(Flux.σ.(yhat[2, :])))
-    # loss_p_causal = p_causal_mse + p_causal_dist / 100
+
     loss_p_causal = p_causal_mse 
 
-    # println("σ2β_mse: $σ2β_mse, σ2β_dist: $σ2β_dist, p_causal_mse: $p_causal_mse, p_causal_dist: $p_causal_dist")
-    # println(exp.(yhat[1, 1:3]))
-    # println(exp.(y[1, 1:3]))
     return w_σ2β * loss_σ2β + w_p_causal * loss_p_causal ## ak: losses summed to form the total loss for training
 end
 

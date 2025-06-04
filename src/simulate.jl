@@ -39,6 +39,44 @@ function draw_slab_s_given_annotations(P; K = 100)
     return s, G, choices, ϕ, σ2
 end
 
+"""
+    simulate_raw(; N = 10_000, P = 1_000, K = 100, h2 = 0.10)
+
+Simulate genotype and phenotype data with genetic architecture influenced by functional annotations.
+
+# Arguments
+- `N::Int=10_000`: Number of samples/individuals
+- `P::Int=1_000`: Number of genetic variants/SNPs
+- `K::Int=100`: Number of functional annotations
+- `h2::Float64=0.10`: Desired narrow-sense heritability of the trait
+
+# Returns
+A named tuple containing:
+- `X::Matrix{Float64}`: Genotype matrix (N × P)
+- `β::Vector{Float64}`: True causal effect sizes
+- `Y::Vector{Float64}`: Simulated phenotypes
+- `Σ::Matrix{Float64}`: Covariance matrix of genotypes (LD structure)
+- `s::Vector{Float64}`: Per-SNP normalized variance scalars derived from annotations
+- `G::Matrix{Float64}`: Matrix of functional annotations (P × K)
+- `γ::Vector{Int}`: Binary indicators of causal status (1=causal, 0=non-causal)
+- `function_choices::Vector{Int}`: Selected functional forms for each annotation
+- `phi::Vector{Function}`: Functions mapping each annotation to effect size variance
+- `sigma_squared::Vector{Float64}`: Per-SNP variance components before normalization
+
+# Details
+This function simulates genotype and phenotype data with a realistic genetic architecture:
+
+1. Genotypes (X) are simulated with a realistic LD structure using random eigendecomposition
+2. 10% of variants are designated as causal (γ)
+3. Functional annotations (G) influence effect size variance through different functional forms
+4. Effect sizes follow a spike-and-slab distribution:
+   - Causal variants: Normal(0, scaled_variance)
+   - Non-causal variants: Normal(0, tiny_variance)
+5. Phenotypes are computed as Y = Xβ + ε, with noise calibrated to achieve target heritability
+
+The simulation includes both continuous and binary annotations, with varying relationships
+to effect size variance (linear, quadratic, or null effects).
+"""
 function simulate_raw(;N = 10_000, P = 1_000, K = 100, h2 = 0.10)
 
     Random.seed!(0)
@@ -74,7 +112,7 @@ function simulate_raw(;N = 10_000, P = 1_000, K = 100, h2 = 0.10)
     σ2 = vXβ * (1 - h2) / h2
 
     Y = μ + rand(Normal(0, sqrt(σ2)), N)
-    return X, β, Y, Σ, s, G, γ, function_choices, phi, sigma_squared
+    return (; X, β, Y, Σ, s, G, γ, function_choices, phi, sigma_squared)
 end
 
 """
@@ -92,5 +130,5 @@ function estimate_sufficient_statistics(X::AbstractArray, Y::Vector)
     SE = sqrt.(mse ./ D)
     Z = coef ./ SE
     R = cor(X)
-    return coef, SE, Z, cor(X), D
+    return (; coef, SE, Z, R, D)
 end

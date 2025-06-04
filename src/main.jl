@@ -15,14 +15,11 @@ This function defines the command line interface for the PRSFNN package.
 - `interpretation_output_file`: A path to the file where the interpretation of the model will be saved
 
 """
-
-@main function main(output_prefix::String = "chr3_175214913_176977984", 
+@main function main(
+            output_prefix::String = "chr3_175214913_176977984", 
             annot_data_path::String = "/data/abattle4/jweins17/annotations/output/chr3_175214913_176977984/variant_list_ccre_annotated_complete.parquet", 
             ld_panel_path::String = "/data/abattle4/jweins17/LD_REF_PANEL/output/bcf/chr3_175214913_176977984/filtered_EUR",
-
-	    gwas_data_path::String = "/data/abattle4/april/hi_julia/annotations/ccre/celltypes/chr3_175214913_176977984/neale_bmi_gwas.tsv",
-	    # model_file::String = "/data/abattle4/april/hi_julia/prs_benchmark/prsfnn/jun14_save_model_and_opt_state/output/chr13/trained_model.bson",
-            # model_file::String = "/data/abattle4/april/hi_julia/prs_benchmark/full_check/prsfnn/full_run_1.5_adj_nn_slab_var_and_p_causal/output/trained_model.bson",
+	        gwas_data_path::String = "/data/abattle4/april/hi_julia/annotations/ccre/celltypes/chr3_175214913_176977984/neale_bmi_gwas.tsv",
             model_file::String = "",
             betas_output_file::String = "PRSFNN_out_cavi.tsv", 
             interpretation_output_file::String = "nn_interpretation.tsv",
@@ -65,7 +62,6 @@ This function defines the command line interface for the PRSFNN package.
     @assert nrow(summary_stats) == length(intersect_SNPs)
     @assert isequal(summary_stats.SNP, good_LD_SNPs)
 
-
     XtX = construct_XtX(LD, X_sd[good_variants], mean(summary_stats.N))
     D = construct_D(XtX)
     Xty = construct_Xty(summary_stats.BETA, D)
@@ -84,8 +80,6 @@ This function defines the command line interface for the PRSFNN package.
     XtX .= construct_XtX(LD, ones(length(summary_stats.SNP)), mean(summary_stats.N))
     D .= construct_D(XtX)
     Xty .= construct_Xty(summary_stats.BETA_std, D)
-
-    # Main.@infiltrate
 
     @assert !any(isnan.(LD))
 
@@ -116,8 +110,8 @@ This function defines the command line interface for the PRSFNN package.
     # write_output_residual_variance(betas_output_file, PRS, output_prefix)
 
     if train_nn
-        #model = PRS[5]
-        model = PRS[6]
+        error("This code path is currently out of date and needs to be updated.")
+        model = PRS[7]
         @save model_file model opt
     end
 
@@ -133,6 +127,26 @@ This function defines the command line interface for the PRSFNN package.
     return PRS
 end
 
+"""
+Write the PRS beta coefficients and related statistics to output files.
+
+# Arguments
+- `output_file::String`: Path where the output file will be saved
+- `summary_stats::DataFrame`: DataFrame containing summary statistics from GWAS
+- `PRS::Tuple`: Tuple containing PRS calculation results including:
+    - PRS[1]: Mean effects (μ)
+    - PRS[2]: Alpha values
+    - PRS[3]: Spike means
+    - PRS[4]: Neural network sigma beta values
+    - PRS[5]: Neural network causal probabilities
+    - PRS[6]: Block residual variance
+- `ld_block_name::String`: Name of the LD block being processed
+
+# Outputs
+Saves two files:
+- A TSV file at the specified output path
+- A Parquet file with the same name but .parquet extension
+"""
 function write_output_betas(output_file, summary_stats, PRS, ld_block_name)
 
     df = DataFrame(
@@ -140,14 +154,12 @@ function write_output_betas(output_file, summary_stats, PRS, ld_block_name)
         mu = PRS[1],
         alpha = PRS[2],
         mu_spike = PRS[3],
-        # var = PRS[3],
         ss_beta = summary_stats.BETA,
-	nn_sigma_beta = PRS[4],
-	nn_p_causal = PRS[5],
+	    nn_sigma_beta = PRS[4],
+	    nn_p_causal = PRS[5],
         block = ld_block_name,
         block_residual_variance = PRS[6],
         block_size = length(PRS[1]),
-	var = PRS[4]
     )
 
     CSV.write(output_file, df; delim = "\t")
@@ -155,9 +167,24 @@ function write_output_betas(output_file, summary_stats, PRS, ld_block_name)
     Parquet2.writefile(replace(output_file, "tsv" => "parquet"), df) # also write to parquet
 end
 
+"""
+Find all parquet files within the subdirectories of a specified directory.
+
+# Arguments
+- `dir::String`: The directory to search for parquet files
+
+# Returns
+- `Vector{String}`: A vector of absolute paths to the parquet files found
+
+# Details
+This function walks through the directory structure, looking for .parquet files
+in each subdirectory. It assumes that each directory contains at most one parquet file,
+and returns the path to that file.
+"""
 function return_parquets(dir)
 
-    all_parquets = []
+
+    all_parquets = Vector{String}()
     for (root, dirs, files) in walkdir(dir)
         for d in dirs
             sub_files = readdir(joinpath(root, d))
@@ -169,7 +196,23 @@ function return_parquets(dir)
     return all_parquets
 end
 
+"""
+Write block-level residual variance information to a TSV file.
+
+# Arguments
+- `output_file::String`: Base file path, which will be modified to create the residual variance file path
+- `PRS::Tuple`: Tuple containing PRS calculation results, where PRS[6] contains block residual variance
+- `ld_block_name::String`: Name of the LD block being processed
+
+# Outputs
+Creates a TSV file with the residual variance information, with filename derived from the input file
+by replacing its extension with "residual_variance.tsv".
+
+# Details
+The output file contains three columns: block name, residual variance, and block size.
+"""
 function write_output_residual_variance(output_file, PRS, ld_block_name)
+
 
     output_file = split(output_file, ".")[1] * "residual_variance.tsv"
 
@@ -180,7 +223,7 @@ function write_output_residual_variance(output_file, PRS, ld_block_name)
     )
 
     CSV.write(output_file, df; delim = "\t")
-
+    
 end
 
 
