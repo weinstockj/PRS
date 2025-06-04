@@ -192,10 +192,10 @@ function inner_loop_cavi_fast!(q_μ, q_spike_μ, q_α, q_var, q_spike_var, XtX, 
         inner_term = @views sum(XtX[:, k] .* marginal_posterior_mean)
 
         q_μ[k] = (q_var[k] ./ σ2) .* 
-            (Xty[k] .- (inner_term[k] - XtX[k, k] * marginal_posterior_mean[k]))
+            (Xty[k] .- (inner_term - XtX[k, k] * marginal_posterior_mean[k]))
 
         q_spike_μ[k] = (q_spike_var[k] ./ σ2) .* 
-            (Xty[k] .- (inner_term[k] - XtX[k, k] * marginal_posterior_mean[k]))
+            (Xty[k] .- (inner_term - XtX[k, k] * marginal_posterior_mean[k]))
 
         marginal_posterior_mean[k] = q_μ[k] * q_α[k] + q_spike_μ[k] * (1 - q_α[k])
 

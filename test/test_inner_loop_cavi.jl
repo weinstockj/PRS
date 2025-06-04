@@ -26,7 +26,6 @@ function test_inner_loop_cavi()
     q_spike_var1 = fill(1e-8, P)
     q_spike_var2 = fill(1e-8, P)
 
-
     σ2, R2, yty = infer_σ2(ss.coef, ss.SE, XtX, Xty, N, P; estimate = true)
     # Run the function
     inner_loop_cavi!(q_μ1, q_spike_μ1, q_α1, q_var1, q_spike_var1, XtX, Xty, σ2; P = P)

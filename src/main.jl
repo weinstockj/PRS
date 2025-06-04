@@ -15,7 +15,7 @@ This function defines the command line interface for the PRSFNN package.
 - `interpretation_output_file`: A path to the file where the interpretation of the model will be saved
 
 """
-@main function main(
+function main(
             output_prefix::String = "chr3_175214913_176977984", 
             annot_data_path::String = "/data/abattle4/jweins17/annotations/output/chr3_175214913_176977984/variant_list_ccre_annotated_complete.parquet", 
             ld_panel_path::String = "/data/abattle4/jweins17/LD_REF_PANEL/output/bcf/chr3_175214913_176977984/filtered_EUR",
