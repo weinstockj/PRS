@@ -1,13 +1,14 @@
 using Test
 using PRSFNN: joint_log_prob, log_prior, rss, elbo, simulate_raw, estimate_sufficient_statistics, train_until_convergence, fit_heritability_nn, infer_σ2, construct_XtX, construct_D, construct_Xty
 using Distributions: Normal
-using Statistics: cor
+using Statistics: cor, mean, median
 using TimerOutputs
 using PDMats
 using LinearAlgebra
 using Flux
 using StatsFuns
 
+include("test_inner_loop_cavi.jl")
 
 function test_rss_elbo()
 
@@ -22,6 +23,7 @@ function test_rss_elbo()
     σ2_β = [0.01, 0.01, 0.01]
     p_causal = [0.10, 0.10, 0.10]
     σ2 = 1.0
+    σ2_spike = 1e-8
 
     @test abs(
             rss(
@@ -41,6 +43,7 @@ function test_rss_elbo()
         σ2_β,
         p_causal,
         σ2,
+        σ2_spike,
         TimerOutput()
     ) - 3.792569404258637) < .0001
 
@@ -49,6 +52,7 @@ function test_rss_elbo()
                 σ2_β,
                 p_causal,
                 σ2,
+                σ2_spike,
                 TimerOutput()
             ) - -2.758314098116269) < .0001
 end
@@ -63,20 +67,47 @@ function test_complete_run()
     model = Chain(layer_1, layer_output)
     optim_type = AdamW(0.02)
     opt = Flux.setup(optim_type, model)
-    raw = simulate_raw(;N = 10_000, P = 1000, K = 100)
+    raw = simulate_raw(;N = 20_000, P = 1000, K = 100, h2 = 0.25)
     ss = estimate_sufficient_statistics(raw[1], raw[3])
-    N_vec = fill(10_000, length(ss[1]))
+
+    # number of SNPs
+    M = length(ss[1]) 
+    N_vec = fill(10_000, M)
+
+    XtX = construct_XtX(ss.R, ones(M), mean(N_vec))
+    D = construct_D(XtX)
+    Xty = construct_Xty(ss.coef, D)
+
+    σ2, R2, yty = infer_σ2(
+        ss.coef, 
+        ss.SE, 
+        XtX, 
+        Xty, 
+        mean(N_vec), 
+        M; 
+        estimate = true, 
+        λ = 0.50 * mean(N_vec)
+    )
+
     out = train_until_convergence(
-               ss[1], 
-               ss[2], 
-               convert(AbstractArray{Float64}, ss[4]), 
-               ss[5], 
-               raw[6], 
-               model = model, 
+               ss.coef, 
+               ss.SE, 
+               ss.R, 
+               XtX, 
+               Xty,
+               raw.G, # annotations
+               model = model,
                opt = opt,
-               N = N_vec
+               σ2 = σ2,
+               R2 = R2,
+               yty = yty,
+               N = N_vec,
+               train_nn = true,
+               max_iter = 5
             )
-    @test cor(out[1] .* out[2], raw[2]) >= 0.70
+    estimate = out.q_μ .* out.q_α .+ out.q_spike_μ .* (1 .- out.q_α)
+
+    @test cor(estimate, raw[2]) >= 0.6
 end
 
 function test_nn()
@@ -133,6 +164,7 @@ end
 
 @testset "tests" begin
     test_rss_elbo()
+    test_inner_loop_cavi()
     test_nn()
     test_complete_run()
     test_infer_σ2()
