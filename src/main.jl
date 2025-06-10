@@ -1,5 +1,4 @@
 """
-
 PRSFNN
 
 This function defines the command line interface for the PRSFNN package.

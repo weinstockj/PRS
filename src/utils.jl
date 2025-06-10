@@ -111,3 +111,6 @@ function clamp_nn_fit_h_nn(q_μ_squared, max_value = 1e-5) # slightly below the 
     return max.(q_μ_squared, max_value)
 end
 
+function standardize(matrix)
+    return (matrix .- mean(matrix, dims=1)) ./ std(matrix, dims=1)
+end

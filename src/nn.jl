@@ -1,5 +1,5 @@
 """
-    fit_genome_wide_nn(betas, annotation_files_dir, model_file; n_epochs, H, n_test, learning_rate_decay, patience)
+fit_genome_wide_nn(betas, annotation_files_dir, model_file; n_epochs, H, n_test, learning_rate_decay, patience)
 
 Train a neural network model to predict variant effects using genome-wide annotation data.
 
@@ -169,12 +169,12 @@ end
 
  Fit the heritability neural network model.
 
-    # Arguments
-    - `model::Chain`: A neural network model
-    - `q_μ::Vector`: A length P vector of posterior means
-    - `q_μ_sq::Vector`: A length P vector of posterior variances
-    - `q_α::Vector`: A length P vector of posterior probabilities of being causal
-    - `G::AbstractArray`: A P x K matrix of annotations
+# Arguments
+- `model::Chain`: A neural network model
+- `q_μ::Vector`: A length P vector of posterior means
+- `q_μ_sq::Vector`: A length P vector of posterior variances
+- `q_α::Vector`: A length P vector of posterior probabilities of being causal
+- `G::AbstractArray`: A P x K matrix of annotations
 
 ```julia-repl
     model = Chain(

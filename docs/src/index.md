@@ -1,5 +1,7 @@
 ## PRSFNN
 
+[logo](PRSFNN_logo_small.svg)
+
 PRSFNN (Polygenic Risk Score with Functional Neural Networks) is a Julia module for calculating polygenic risk scores by integrating GWAS summary statistics with functional annotations using neural networks.
 
 ## Features
@@ -52,25 +54,60 @@ For testing and development, you can simulate GWAS summary statistic data:
 
 ```julia
 # Generate simulated data
-raw = simulate_raw()
+raw = simulate_raw(;N = 10_000, P = 1_000, K = 100, h2 = 0.10)
 # Extract sufficient statistics needed for PRS
-ss = estimate_sufficient_statistics(raw[1], raw[3])
+summary_stats = estimate_sufficient_statistics(raw.X, raw.Y)
 
 # Visualize the true effect size distribution
 using Plots
-histogram(raw[2], title="True β Distribution")
+histogram(raw.β, title="True β Distribution")
 ```
 
 ### Training a PRS Model
 
 ```julia
 # Train the PRS model
-prs_result = train_until_convergence(
-    ss[1],         # Standardized beta coefficients
-    ss[2],         # Standard errors
-    ss[4],         # LD matrix
-    ss[5],         # XtX matrix
-    raw[6]         # Annotations
+XtX = construct_XtX(ss.R, size(ss.X, 2), size(ss.X, 1))
+D = construct_D(XtX)
+Xty = construct_Xty(ss.coef, D)
+
+σ2, R2, yty = infer_σ2(
+    summary_stats.BETA, 
+    summary_stats.SE, 
+    XtX, 
+    Xty, 
+    size(ss.X, 1), 
+    size(ss.X, 2); 
+    estimate = true, 
+    λ = 0.50 * size(ss.X, 1)
+)
+
+K = size(raw.G, 2)
+
+layer_1 = Dense(K => H, Flux.softplus; init = Flux.glorot_normal(gain = 0.005))
+layer_output = Dense(H => 2)
+layer_output.bias .= [StatsFuns.log(0.001), StatsFuns.logit(0.1)]
+model = Chain(layer_1, layer_output)
+initial_lr = 0.00005
+#    initial_lr = 0.0001
+optim_type = AdamW(0.001)
+opt = Flux.setup(optim_type, model)
+
+PRS = train_until_convergence(
+    summary_stats.BETA_std,
+    summary_stats.SE,
+    summary_stats.R, 
+    XtX,
+    Xty,
+    raw.G,
+    model = model,
+    opt = opt,
+    σ2 = σ2,
+    R2 = R2,
+    yty = yty,
+    N = size(summary_stats.X, 1),
+    train_nn = false,
+    max_iter = 5
 )
 ```
 

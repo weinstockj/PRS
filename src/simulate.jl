@@ -116,10 +116,33 @@ function simulate_raw(;N = 10_000, P = 1_000, K = 100, h2 = 0.10)
 end
 
 """
-`estimate_sufficient_statistics(X, Y)`
+    estimate_sufficient_statistics(X, Y)
 
-Estimate the sufficient statistics for the model given genotypes and phenotype
+Estimate the sufficient statistics for genetic association analysis from genotypes and phenotypes.
 
+# Arguments
+- `X::AbstractArray`: Genotype matrix (N×P) where N is the number of samples and P is the number of SNPs.
+- `Y::Vector`: Phenotype vector of length N.
+
+# Returns
+A named tuple containing:
+- `coef::Vector`: Regression coefficients for each SNP.
+- `SE::Vector`: Standard errors of the regression coefficients.
+- `Z::Vector`: Z-scores (coef/SE) for each SNP.
+- `R::Matrix`: Correlation matrix of the genotypes (LD matrix).
+- `D::Vector`: Sum of squares for each SNP (diagonal of X'X).
+
+# Description
+This function computes the basic summary statistics needed for genetic association analysis,
+including marginal effect sizes, standard errors, test statistics, and the correlation 
+structure between variants.
+
+# Example
+```julia
+X = randn(1000, 100)  # 1000 samples, 100 SNPs
+Y = randn(1000)       # Phenotypes
+stats = estimate_sufficient_statistics(X, Y)
+```
 """
 function estimate_sufficient_statistics(X::AbstractArray, Y::Vector)
     N = size(X, 1)
