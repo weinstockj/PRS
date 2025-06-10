@@ -1,6 +1,4 @@
-function standardize(matrix)
-    return (matrix .- mean(matrix, dims=1)) ./ std(matrix, dims=1)
-end
+
 
 
 """

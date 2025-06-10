@@ -1,6 +1,6 @@
 ## PRSFNN
 
-[logo](PRSFNN_logo_small.svg)
+![logo](PRSFNN_logo_small.svg)
 
 PRSFNN (Polygenic Risk Score with Functional Neural Networks) is a Julia module for calculating polygenic risk scores by integrating GWAS summary statistics with functional annotations using neural networks.
 
