@@ -203,15 +203,15 @@ function inner_loop_cavi_fast!(q_μ, q_spike_μ, q_α, q_var, q_spike_var, XtX, 
 end
 
 """
-    `infer_σ2(coef, SE, R, D, X_sd, N, P)`
+    infer_σ2(coef, SE, R, D, X_sd, N, P)
 
-    # Arguments
-    - `coef::Vector`: A length P vector of effect sizes
-    - `SE::Vector`: A length P vector of standard errors
-    - `XtX::AbstractArray`: A P x P matrix equal to N times the covariance matrix of the genotypes
-    - `Xty::Vector`: A length P vector of the inner product between genotype and phenotype
-    - `N`: Number of samples
-    - `P`: Number of SNPs
+# Arguments
+- `coef::Vector`: A length P vector of effect sizes
+- `SE::Vector`: A length P vector of standard errors
+- `XtX::AbstractArray`: A P x P matrix equal to N times the covariance matrix of the genotypes
+- `Xty::Vector`: A length P vector of the inner product between genotype and phenotype
+- `N`: Number of samples
+- `P`: Number of SNPs
 """
 function infer_σ2(coef::Vector, SE::Vector, XtX::AbstractArray, Xty::Vector, N::Real, P::Int64; estimate = false, λ = 100)
 
@@ -238,14 +238,14 @@ function infer_σ2(coef::Vector, SE::Vector, XtX::AbstractArray, Xty::Vector, N:
 end
 
 """
-    `train_until_convergence(coef, SE, R, D, G; max_iter = 20, threshold = 0.1, N = 10_000)`
+    train_until_convergence(coef, SE, R, D, G; max_iter = 20, threshold = 0.1, N = 10_000)
 
-    # Arguments
-    - `coef::Vector`: A length P vector of effect sizes
-    - `SE::Vector`: A length P vector of standard errors
-    - `R::AbstractArray`: A P x P correlation matrix
-    - `D::Vector`: A length P vector of the sum of squared genotypes
-    - `G::AbstractArray`: A P x K matrix of annotations
+# Arguments
+- `coef::Vector`: A length P vector of effect sizes
+- `SE::Vector`: A length P vector of standard errors
+- `R::AbstractArray`: A P x P correlation matrix
+- `D::Vector`: A length P vector of the sum of squared genotypes
+- `G::AbstractArray`: A P x K matrix of annotations
     
 """
 function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, XtX::AbstractArray, Xty::Vector, G::AbstractArray; model = model, opt = opt, max_iter = 4, threshold = 0.2, train_nn = true, N = 10_000, yty = 300_000, σ2 = 1.0, R2 = 0.01, update_σ2 = true) 
