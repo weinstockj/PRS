@@ -14,6 +14,10 @@ PRSFNN (Polygenic Risk Score with Functional Neural Networks) is a Julia module 
 - Coordinate Ascent Variational Inference (CAVI) for posterior effect size estimation
 - Neural network models to learn the relationship between functional annotations and genetic effect sizes
 
+## PRSFNN runner
+
+Note: this Julia module is used for running PRSFNN in individual LD blocks and training the neural network. To run PRSFNN genome-wide is an HPC environment, see our workflow [here](https://github.com/weinstockj/PRSFNN-runner). 
+
 ## Installation
 
 ```julia
