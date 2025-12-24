@@ -13,6 +13,15 @@ This function defines the command line interface for the PRSFNN package.
 - `betas_output_file`: A path to the file where the PRS betas will be saved 
 - `interpretation_output_file`: A path to the file where the interpretation of the model will be saved
 
+# Keyword Arguments
+
+- `min_MAF`: Minimum minor allele frequency threshold (default: 0.01)
+- `train_nn`: Whether to train the neural network (default: false)
+- `H`: Number of hidden units in neural network (default: 5)
+- `max_iter`: Maximum number of CAVI iterations (default: 5)
+- `use_ld_cache`: Use cached LD computation if available (default: true)
+- `force_recompute_ld`: Force recomputation of LD even if cache exists (default: false)
+
 """
 function main(
             output_prefix::String = "chr3_175214913_176977984", 
@@ -22,7 +31,7 @@ function main(
             model_file::String = "",
             betas_output_file::String = "PRSFNN_out_cavi.tsv", 
             interpretation_output_file::String = "nn_interpretation.tsv",
-            first_stage_rv_file::String = "PRSFNN_out_initial.tsv"; min_MAF = 0.01, train_nn = false, H = 5, max_iter = 5)
+            first_stage_rv_file::String = "PRSFNN_out_initial.tsv"; min_MAF = 0.01, train_nn = false, H = 5, max_iter = 5, use_ld_cache = true, force_recompute_ld = false)
 
     @info "$(ltime()) Current block/output_prefix: $output_prefix"
     annotations, summary_stats, current_LD_block_positions = load_annot_and_summary_stats(
@@ -45,10 +54,37 @@ function main(
     mkpath(LD_output_path)        
 
     LD_reference_filtered = joinpath(LD_output_path, "filtered")
-    snpdata = SnpData(ld_panel_path)
-    SnpArrays.filter(snpdata; des=LD_reference_filtered, f_snp = x -> x[:position] in current_LD_block_positions)
     LD_reference_filtered_bed = LD_reference_filtered * ".bed"
-    LD, X_sd, AF, good_variants = compute_LD(LD_reference_filtered_bed)
+    LD_cache_file = joinpath(LD_output_path, "LD_cache.jld2")
+    
+    # Check if filtered bed files already exist, skip filtering if so
+    if isfile(LD_reference_filtered_bed) && isfile(LD_reference_filtered * ".bim") && isfile(LD_reference_filtered * ".fam")
+        @info "$(ltime()) Filtered LD reference files already exist, skipping SnpArrays.filter step"
+    else
+        @info "$(ltime()) Filtering LD reference panel to current block positions"
+        snpdata = SnpData(ld_panel_path)
+        SnpArrays.filter(snpdata; des=LD_reference_filtered, f_snp = x -> x[:position] in current_LD_block_positions)
+    end
+    
+    # Check for cached LD computation
+    if use_ld_cache && !force_recompute_ld && is_cache_valid(LD_cache_file, LD_reference_filtered_bed)
+        @info "$(ltime()) Loading LD from cache: $LD_cache_file"
+        LD, X_sd, AF, good_variants = load_ld_cache(LD_cache_file)
+    else
+        if force_recompute_ld
+            @info "$(ltime()) force_recompute_ld=true, recomputing LD"
+        elseif !use_ld_cache
+            @info "$(ltime()) use_ld_cache=false, computing LD without caching"
+        else
+            @info "$(ltime()) No valid cache found, computing LD"
+        end
+        LD, X_sd, AF, good_variants = compute_LD(LD_reference_filtered_bed)
+        
+        # Save to cache if caching is enabled
+        if use_ld_cache
+            save_ld_cache(LD_cache_file, LD, X_sd, AF, good_variants)
+        end
+    end
 
     LD_SNPs = CSV.read(LD_reference_filtered * ".bim", DataFrame; header = false)
     good_LD_SNPs = LD_SNPs.Column2[good_variants]

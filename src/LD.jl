@@ -1,4 +1,49 @@
 """
+    save_ld_cache(cache_file::String, R, sds, mean_frequencies, good_variants)
+
+Save computed LD results to a cache file.
+"""
+function save_ld_cache(cache_file::String, R, sds, mean_frequencies, good_variants)
+    @info "$(ltime()) Saving LD cache to $cache_file"
+    JLD2.jldsave(cache_file; R=R, sds=sds, mean_frequencies=mean_frequencies, good_variants=good_variants)
+end
+
+"""
+    load_ld_cache(cache_file::String)
+
+Load cached LD results from file.
+
+# Returns
+- `R`: LD correlation matrix
+- `sds`: Standard deviations
+- `mean_frequencies`: Mean allele frequencies
+- `good_variants`: Indices of good variants
+"""
+function load_ld_cache(cache_file::String)
+    @info "$(ltime()) Loading LD cache from $cache_file"
+    data = JLD2.load(cache_file)
+    return data["R"], data["sds"], data["mean_frequencies"], data["good_variants"]
+end
+
+"""
+    is_cache_valid(cache_file::String, bed_file::String)
+
+Check if cache file exists and is newer than the bed file.
+"""
+function is_cache_valid(cache_file::String, bed_file::String)
+    if !isfile(cache_file)
+        return false
+    end
+    if !isfile(bed_file)
+        return false
+    end
+    # Check if cache is newer than the source bed file
+    cache_mtime = mtime(cache_file)
+    bed_mtime = mtime(bed_file)
+    return cache_mtime >= bed_mtime
+end
+
+"""
     compute_LD(LD_reference::String)
 
 Compute linkage disequilibrium (LD) correlation matrix from a reference genotype file.
