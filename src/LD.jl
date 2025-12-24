@@ -5,7 +5,7 @@ Save computed LD results to a cache file.
 """
 function save_ld_cache(cache_file::String, R, sds, mean_frequencies, good_variants)
     @info "$(ltime()) Saving LD cache to $cache_file"
-    JLD2.jldsave(cache_file; R=R, sds=sds, mean_frequencies=mean_frequencies, good_variants=good_variants)
+    return JLD2.jldsave(cache_file; R = R, sds = sds, mean_frequencies = mean_frequencies, good_variants = good_variants)
 end
 
 """
@@ -66,10 +66,10 @@ deviation thresholds.
 function compute_LD(LD_reference::String = "test_data/test_data/chr1_16103_1170341/filtered.bed")
     genotypes = SnpArray(LD_reference)
     # rows are samples, columns are SNPs
-    genotypes_float = convert(Matrix{Float64}, genotypes, impute=true)
+    genotypes_float = convert(Matrix{Float64}, genotypes, impute = true)
     mean_frequencies = vec(mean(genotypes_float; dims = 1))
-    sds              = vec(std(genotypes_float; dims = 1))
-    good_variants = findall((mean_frequencies .> 0.0) .& (mean_frequencies .< 2.0) .& (sds .> .01)) # remove monomorphic variants and those with no variance
+    sds = vec(std(genotypes_float; dims = 1))
+    good_variants = findall((mean_frequencies .> 0.0) .& (mean_frequencies .< 2.0) .& (sds .> 0.01)) # remove monomorphic variants and those with no variance
     @info "$(ltime()) Number of polymorphic variants out of all variants: $(length(good_variants)) / $(size(genotypes_float, 2))"
     good_genotypes = view(genotypes_float, :, good_variants)
     R = cor(good_genotypes)
@@ -179,4 +179,3 @@ function poet_cov(X::AbstractArray; K = 100, τ = 0.01, N = 1000)
     return Σk + Σu
     # return Σk + Σu, Σk, Σu
 end
-

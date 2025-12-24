@@ -12,7 +12,7 @@ using HypothesisTests: ApproximateTwoSampleKSTest
 using SnpArrays
 using LoggingExtras
 using Dates
-using SnoopPrecompile  
+using SnoopPrecompile
 using Comonicon
 using CSV
 using DataFrames

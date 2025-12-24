@@ -24,48 +24,49 @@ This function defines the command line interface for the PRSFNN package.
 
 """
 function main(
-            output_prefix::String = "chr3_175214913_176977984", 
-            annot_data_path::String = "/data/abattle4/jweins17/annotations/output/chr3_175214913_176977984/variant_list_ccre_annotated_complete.parquet", 
-            ld_panel_path::String = "/data/abattle4/jweins17/LD_REF_PANEL/output/bcf/chr3_175214913_176977984/filtered_EUR",
-	        gwas_data_path::String = "/data/abattle4/april/hi_julia/annotations/ccre/celltypes/chr3_175214913_176977984/neale_bmi_gwas.tsv",
-            model_file::String = "",
-            betas_output_file::String = "PRSFNN_out_cavi.tsv", 
-            interpretation_output_file::String = "nn_interpretation.tsv",
-            first_stage_rv_file::String = "PRSFNN_out_initial.tsv"; min_MAF = 0.01, train_nn = false, H = 5, max_iter = 5, use_ld_cache = true, force_recompute_ld = false)
+        output_prefix::String = "chr3_175214913_176977984",
+        annot_data_path::String = "/data/abattle4/jweins17/annotations/output/chr3_175214913_176977984/variant_list_ccre_annotated_complete.parquet",
+        ld_panel_path::String = "/data/abattle4/jweins17/LD_REF_PANEL/output/bcf/chr3_175214913_176977984/filtered_EUR",
+        gwas_data_path::String = "/data/abattle4/april/hi_julia/annotations/ccre/celltypes/chr3_175214913_176977984/neale_bmi_gwas.tsv",
+        model_file::String = "",
+        betas_output_file::String = "PRSFNN_out_cavi.tsv",
+        interpretation_output_file::String = "nn_interpretation.tsv",
+        first_stage_rv_file::String = "PRSFNN_out_initial.tsv"; min_MAF = 0.01, train_nn = false, H = 5, max_iter = 5, use_ld_cache = true, force_recompute_ld = false
+    )
 
     @info "$(ltime()) Current block/output_prefix: $output_prefix"
     annotations, summary_stats, current_LD_block_positions = load_annot_and_summary_stats(
-                annot_data_path,
-                gwas_data_path,
-                min_MAF = min_MAF
-            )
-    
+        annot_data_path,
+        gwas_data_path,
+        min_MAF = min_MAF
+    )
+
     SNPs_count = size(annotations, 1)
     @info "$(ltime()) Number of SNPs in block: $SNPs_count"
     if isfile(model_file)
         @load model_file model opt
     else
         model = nothing
-        opt   = nothing
+        opt = nothing
     end
 
     LD_output_path = joinpath(output_prefix, "LD_output")
     @info "$(ltime()) Now creating directory $LD_output_path for LD output files."
-    mkpath(LD_output_path)        
+    mkpath(LD_output_path)
 
     LD_reference_filtered = joinpath(LD_output_path, "filtered")
     LD_reference_filtered_bed = LD_reference_filtered * ".bed"
     LD_cache_file = joinpath(LD_output_path, "LD_cache.jld2")
-    
+
     # Check if filtered bed files already exist, skip filtering if so
     if isfile(LD_reference_filtered_bed) && isfile(LD_reference_filtered * ".bim") && isfile(LD_reference_filtered * ".fam")
         @info "$(ltime()) Filtered LD reference files already exist, skipping SnpArrays.filter step"
     else
         @info "$(ltime()) Filtering LD reference panel to current block positions"
         snpdata = SnpData(ld_panel_path)
-        SnpArrays.filter(snpdata; des=LD_reference_filtered, f_snp = x -> x[:position] in current_LD_block_positions)
+        SnpArrays.filter(snpdata; des = LD_reference_filtered, f_snp = x -> x[:position] in current_LD_block_positions)
     end
-    
+
     # Check for cached LD computation
     if use_ld_cache && !force_recompute_ld && is_cache_valid(LD_cache_file, LD_reference_filtered_bed)
         @info "$(ltime()) Loading LD from cache: $LD_cache_file"
@@ -79,7 +80,7 @@ function main(
             @info "$(ltime()) No valid cache found, computing LD"
         end
         LD, X_sd, AF, good_variants = compute_LD(LD_reference_filtered_bed)
-        
+
         # Save to cache if caching is enabled
         if use_ld_cache
             save_ld_cache(LD_cache_file, LD, X_sd, AF, good_variants)
@@ -102,14 +103,14 @@ function main(
     Xty = construct_Xty(summary_stats.BETA, D)
 
     σ2, R2, yty = infer_σ2(
-        summary_stats.BETA, 
-        summary_stats.SE, 
-        XtX, 
-        Xty, 
-        median(summary_stats.N), 
-        length(summary_stats.BETA); 
-        estimate = true, 
-        λ = 0.50 * median(summary_stats.N)
+        summary_stats.BETA,
+        summary_stats.SE,
+        XtX,
+        Xty,
+        median(summary_stats.N),
+        length(summary_stats.BETA);
+        estimate = true,
+        λ = 0.5 * median(summary_stats.N)
     )
 
     XtX .= construct_XtX(LD, ones(length(summary_stats.SNP)), mean(summary_stats.N))
@@ -120,7 +121,7 @@ function main(
 
     if isfile(first_stage_rv_file)
         calculated_σ2 = CSV.read(first_stage_rv_file, DataFrame)
-        σ2 = calculated_σ2.global_sigma2[1]       
+        σ2 = calculated_σ2.global_sigma2[1]
         @info "$(ltime()) Calculating and passing global residual variance $(round(σ2; digits = 2)) after NN tratining."
     end
 
@@ -151,10 +152,10 @@ function main(
     end
 
     # effects = interpret_model(
-    #     block, 
-    #     model_file, 
-    #     annot_data_path, 
-    #     gwas_file_name, 
+    #     block,
+    #     model_file,
+    #     annot_data_path,
+    #     gwas_file_name,
     #     interpretation_output_file;
     #     min_MAF = min_MAF
     # )
@@ -190,8 +191,8 @@ function write_output_betas(output_file, summary_stats, PRS, ld_block_name)
         alpha = PRS[2],
         mu_spike = PRS[3],
         ss_beta = summary_stats.BETA,
-	    nn_sigma_beta = PRS[4],
-	    nn_p_causal = PRS[5],
+        nn_sigma_beta = PRS[4],
+        nn_p_causal = PRS[5],
         block = ld_block_name,
         block_residual_variance = PRS[6],
         block_size = length(PRS[1]),
@@ -199,7 +200,7 @@ function write_output_betas(output_file, summary_stats, PRS, ld_block_name)
 
     CSV.write(output_file, df; delim = "\t")
 
-    Parquet2.writefile(replace(output_file, "tsv" => "parquet"), df) # also write to parquet
+    return Parquet2.writefile(replace(output_file, "tsv" => "parquet"), df) # also write to parquet
 end
 
 """
@@ -257,8 +258,6 @@ function write_output_residual_variance(output_file, PRS, ld_block_name)
         block_size = length(PRS[1])
     )
 
-    CSV.write(output_file, df; delim = "\t")
-    
+    return CSV.write(output_file, df; delim = "\t")
+
 end
-
-
