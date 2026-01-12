@@ -21,6 +21,8 @@ This function defines the command line interface for the PRSFNN package.
 - `max_iter`: Maximum number of CAVI iterations (default: 5)
 - `use_ld_cache`: Use cached LD computation if available (default: true)
 - `force_recompute_ld`: Force recomputation of LD even if cache exists (default: false)
+- `trait_type`: Type of trait - "quantitative" or "case-control" (default: "quantitative")
+- `prevalence`: Population prevalence for case-control traits (default: 0.5)
 
 """
 function main(
@@ -31,14 +33,18 @@ function main(
         model_file::String = "",
         betas_output_file::String = "PRSFNN_out_cavi.tsv",
         interpretation_output_file::String = "nn_interpretation.tsv",
-        first_stage_rv_file::String = "PRSFNN_out_initial.tsv"; min_MAF = 0.01, train_nn = false, H = 5, max_iter = 5, use_ld_cache = true, force_recompute_ld = false
+        first_stage_rv_file::String = "PRSFNN_out_initial.tsv"; 
+        min_MAF = 0.01, train_nn = false, H = 5, max_iter = 5, use_ld_cache = true, force_recompute_ld = false,
+        trait_type::String = "quantitative", prevalence::Float64 = 0.5
     )
 
     @info "$(ltime()) Current block/output_prefix: $output_prefix"
     annotations, summary_stats, current_LD_block_positions = load_annot_and_summary_stats(
         annot_data_path,
         gwas_data_path,
-        min_MAF = min_MAF
+        min_MAF = min_MAF,
+        trait_type = trait_type,
+        prevalence = prevalence
     )
 
     SNPs_count = size(annotations, 1)
