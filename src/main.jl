@@ -50,13 +50,12 @@ function main(
         opt = nothing
     end
 
-    LD_output_path = joinpath(output_prefix, "LD_output")
-    @info "$(ltime()) Now creating directory $LD_output_path for LD output files."
-    mkpath(LD_output_path)
-
-    LD_reference_filtered = joinpath(LD_output_path, "filtered")
+    # Use LD panel directory for caching (shared across iterations)
+    LD_cache_path = dirname(ld_panel_path)
+    LD_cache_file = joinpath(LD_cache_path, "LD_cache_prsfnn.jld2")
+    LD_reference_filtered = joinpath(LD_cache_path, "filtered_prsfnn")
     LD_reference_filtered_bed = LD_reference_filtered * ".bed"
-    LD_cache_file = joinpath(LD_output_path, "LD_cache.jld2")
+    @info "$(ltime()) LD cache location: $LD_cache_path"
 
     # Check if filtered bed files already exist, skip filtering if so
     if isfile(LD_reference_filtered_bed) && isfile(LD_reference_filtered * ".bim") && isfile(LD_reference_filtered * ".fam")
