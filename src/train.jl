@@ -61,9 +61,9 @@ function train_cavi(p_causal, σ2_β, coef, SE, R, XtX, Xty, to; P = 1_000, n_el
         q_odds = ones(P)
         SSR = ones(P)
         if update_σ2
-  	        σ2 = 1.0
+            σ2 = 1.0
         end
-	end
+    end
 
     q_μ_best = copy(q_μ)
     q_spike_μ_best = copy(q_spike_μ)
@@ -102,7 +102,9 @@ function train_cavi(p_causal, σ2_β, coef, SE, R, XtX, Xty, to; P = 1_000, n_el
         loss_lower_ci = mean_loss - 1.00 * se_loss # 65% CI
         loss_upper_ci = mean_loss + 1.00 * se_loss # 65% CI
 
+
         if (isnan(mean_loss) | isinf(mean_loss))
+            # Main.@infiltrate
             error("NaN loss detected.")
             break
         end
@@ -258,25 +260,25 @@ function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, XtX
         q_μ = zeros(P)
         q_spike_μ = zeros(P)
         q_α = ones(P) .* 0.01
-        # L = sum(q_α)
         q_var = ones(P) * 0.001
-	    updated_σ2 = σ2
+        updated_σ2 = σ2
 
         cavi_q_μ = copy(q_μ) # zeros(P)
         cavi_q_spike_μ = copy(q_spike_μ) # zeros(P)
         cavi_q_var = copy(q_var) # ones(P) * 0.001
         cavi_q_α = copy(q_α) # ones(P) .* 0.10
-	    cavi_updated_σ2 = updated_σ2
+        cavi_updated_σ2 = updated_σ2
 
         @info "$(ltime()) Estimated σ2 = $(round(σ2; digits = 2)), h2 = $(round(R2; digits = 2))"
 
         if (model != nothing) & !train_nn
             @info "$(ltime()) Resetting max_iter from $max_iter to 1 because the nn is frozen"
             @info "$(ltime()) Confirming global residual variance $(round(σ2; digits = 2))."
-	        nn_σ2_β, nn_p_causal = predict_with_nn(model, Float32.(G))
-            nn_σ2_β = nn_σ2_β .* σ2
+            nn_σ2_β, nn_p_causal = predict_with_nn(model, Float32.(G))
+            nn_p_causal = clamp(nn_p_causal, 1e-4)  # Clamp to prevent numerical issues in ELBO
+            nn_σ2_β = min.(max.(nn_σ2_β .* σ2, 1e-8), 1.0) # Clamp to prevent numerical issues
             max_iter = 1
-	        update_σ2 = false
+            update_σ2 = false
         else
             @info "$(ltime()) Initializing prior inclusion probability and slab variance"
             nn_p_causal = 0.1 .* ones(P)
@@ -312,8 +314,8 @@ function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, XtX
                 P = P,
                 N = N,
                 yty = yty,
-		        update_σ2 = update_σ2,
-		        σ2 = σ2
+                update_σ2 = update_σ2,
+                σ2 = σ2
             )
             @info "$(ltime()) Training CAVI finished"
         end
@@ -349,7 +351,7 @@ function train_until_convergence(coef::Vector, SE::Vector, R::AbstractArray, XtX
         cavi_q_α = copy(q_α)
         cavi_q_var = copy(q_var)
         # cavi_q_marginal_var = compute_marginal_variance(q_μ, q_var, q_α)
-	    cavi_updated_σ2 = updated_σ2
+        cavi_updated_σ2 = updated_σ2
 
         @info "q_μ / sqrt(σ2)"
         describe_vector(q_μ ./ sqrt(σ2))
@@ -455,7 +457,6 @@ function train_gibbs(p_causal, σ2_β, coef, SE, R, XtX, Xty, to; P = 1_000, max
             # @timeit to "update Σt" Σt .+= Dt
             @timeit to "update Σtinv" Σtinv .= inv(Σt)
             @timeit to "define β_dist" β_dist = @views MvNormal(Σtinv * Xty, Σtinv * σ2t[t - 1])
-            # Main.@infiltrate
             @timeit to "draw β" β_draw[:, t] .= rand(β_dist)
             @timeit to "define slab dist" slab_dist .= @views Normal.(0, sqrt(σ2t[t - 1]) .* sqrt.(σ2_β .+ spike_σ2))
             @timeit to "define spike dist" spike_dist = @views Normal(0, sqrt(σ2t[t - 1]) .* sqrt(spike_σ2))
@@ -464,9 +465,6 @@ function train_gibbs(p_causal, σ2_β, coef, SE, R, XtX, Xty, to; P = 1_000, max
                 spike_prob .= @views pdf(spike_dist, β_draw[:, t])
                 α .= (p_causal .* slab_prob) ./ (p_causal .* slab_prob .+ (1 .- p_causal) .* spike_prob)
             end
-            # if t > 10
-            #     Main.@infiltrate
-            # end
             @timeit to "draw γ" γt[:, t] .= rand.(Bernoulli.(α))
             @timeit to "update σ2" begin
                 a = (1 + median(N) + P) / 2 

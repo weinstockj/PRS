@@ -42,7 +42,7 @@ function fit_genome_wide_nn(
 
     layer_1 = Dense(K => H, Flux.softplus; init = Flux.glorot_normal(gain = 0.005))
     layer_output = Dense(H => 2)
-    layer_output.bias .= [StatsFuns.log(0.001), StatsFuns.logit(0.1)]
+    layer_output.bias .= [StatsFuns.log(0.01), StatsFuns.logit(0.1)]
     model = Chain(layer_1, layer_output)
     initial_lr = 0.00005
 #    initial_lr = 0.0001
@@ -73,6 +73,8 @@ function fit_genome_wide_nn(
     best_model = deepcopy(model)
     best_opt = deepcopy(opt)
 
+    bottom_σ2β = 1e-7 # used in clamping to avoid numerical issues later on
+
     @inbounds for i in 1:n_epochs
         annot_file = training_parquets[i]
         
@@ -83,8 +85,14 @@ function fit_genome_wide_nn(
         epoch_annot = select_annotation_columns(epoch_df[:, names(annotations)])
 
         X = Float32.(transpose(epoch_annot))
-        Y = Float32.(transpose(hcat(log.((epoch_df.mu .^ 2 ./ RSE)), logit.(epoch_df.alpha))))
-#        Y = Float32.(transpose(hcat(log.((epoch_df.mu .^ 2 ./ global_σ2)), logit.(epoch_df.alpha))))
+        Y = Float32.(
+            transpose(
+                hcat(
+                    log.(max.(epoch_df.mu .^ 2 ./ RSE, bottom_σ2β)), # clamp to avoid numerical issues 
+                    logit.(epoch_df.alpha)
+                )
+            )
+        )
 
         data = (X, Y)
 
