@@ -64,7 +64,7 @@ Clamp values to the range [ϵ, 1-ϵ] to avoid numerical issues with logit transf
 This function ensures that probability values are strictly between 0 and 1,
 preventing Inf/-Inf results when applying logit transformations.
 """
-function clamp(x, ϵ = 1e-4)
+function clamp(x, ϵ::Float64 = 1e-4)
     x = max.(min.(x, 1.0 - ϵ), ϵ) # to avoid Inf with logit transformation later
     return x
 end
