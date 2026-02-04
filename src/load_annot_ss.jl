@@ -1,5 +1,5 @@
 """
-    load_annot_and_summary_stats(annotation_path::String, summary_statistics_path::String; min_MAF=0.01)
+    load_annot_and_summary_stats(annotation_path::String, summary_statistics_path::String; min_MAF=0.01, trait_type="quantitative", prevalence=0.5)
 
 Load and process annotation data and GWAS summary statistics.
 
@@ -7,6 +7,8 @@ Load and process annotation data and GWAS summary statistics.
 - `annotation_path::String`: Path to the Parquet file containing genetic variant annotations
 - `summary_statistics_path::String`: Path to the file containing GWAS summary statistics
 - `min_MAF::Float64=0.01`: Minimum minor allele frequency threshold for filtering variants
+- `trait_type::String="quantitative"`: Type of trait - "quantitative" or "case-control"
+- `prevalence::Float64=0.5`: Population prevalence for case-control traits (assumed equal to case proportion)
 
 # Returns
 - `annotations::DataFrame`: Filtered and processed annotations
@@ -17,33 +19,61 @@ Load and process annotation data and GWAS summary statistics.
 This function:
 1. Loads annotation data from a Parquet file
 2. Loads summary statistics from a CSV/TSV file
-3. Standardizes beta coefficients based on SE, N, and MAF
+3. Standardizes beta coefficients based on SE, N, and MAF (or N_case/N_control for case-control)
 4. Filters out duplicates and variants below the MAF threshold
 5. Joins annotation data with summary statistics based on SNP IDs
 6. Returns the processed datasets along with the genomic positions
 
-The function expects specific column names in the summary statistics file:
-SNP, MAF, N, BETA, SE, PVALUE
+For quantitative traits, expects: SNP, MAF, N, BETA, SE, PVALUE
+For case-control traits, expects: SNP, MAF, N (or N_case and N_control), BETA (log-OR), SE, PVALUE
 """
-function load_annot_and_summary_stats(annotation_path::String, summary_statistics_path::String; min_MAF=0.01)
+function load_annot_and_summary_stats(annotation_path::String, summary_statistics_path::String; min_MAF=0.01, trait_type="quantitative", prevalence=0.5)
     
     annot = DataFrame(Parquet2.Dataset(annotation_path); copycols=false)
     rename!(annot,:variant_id => :SNP)
 
     summary_statistics = CSV.read(summary_statistics_path, DataFrame)
 
-    required_columns = [:SNP, :MAF, :N, :BETA, :SE, :PVALUE]
+    # Handle sample size columns based on trait type
+    if trait_type == "case-control"
+        if :N_case in names(summary_statistics) && :N_control in names(summary_statistics)
+            # Compute effective sample size
+            summary_statistics.N = compute_effective_sample_size(summary_statistics.N_case, summary_statistics.N_control)
+            required_columns = [:SNP, :MAF, :N, :N_case, :N_control, :BETA, :SE, :PVALUE]
+        elseif :N in names(summary_statistics)
+            # Assume N_case and N_control based on prevalence
+            summary_statistics.N_case = round.(Int, summary_statistics.N .* prevalence)
+            summary_statistics.N_control = summary_statistics.N .- summary_statistics.N_case
+            summary_statistics.N = compute_effective_sample_size(summary_statistics.N_case, summary_statistics.N_control)
+            required_columns = [:SNP, :MAF, :N, :N_case, :N_control, :BETA, :SE, :PVALUE]
+        else
+            error("For case-control traits, summary statistics must contain either N or both N_case and N_control")
+        end
+    else
+        required_columns = [:SNP, :MAF, :N, :BETA, :SE, :PVALUE]
+    end
 
     summary_statistics = select(summary_statistics, required_columns)
     summary_statistics.SNP = String.(summary_statistics.SNP)
 
-    @info "$(ltime()) Now standardizing beta"
-    summary_statistics.BETA_std = standardize_beta(
-                summary_statistics.BETA, 
-                summary_statistics.SE, 
-                summary_statistics.N,
-                summary_statistics.MAF
-    )
+    @info "$(ltime()) Now standardizing beta for trait_type=$trait_type"
+    if trait_type == "case-control"
+        summary_statistics.BETA_std = standardize_beta(
+                    summary_statistics.BETA, 
+                    summary_statistics.SE, 
+                    summary_statistics.N,
+                    summary_statistics.MAF;
+                    trait_type=trait_type,
+                    prevalence=prevalence
+        )
+    else
+        summary_statistics.BETA_std = standardize_beta(
+                    summary_statistics.BETA, 
+                    summary_statistics.SE, 
+                    summary_statistics.N,
+                    summary_statistics.MAF
+        )
+    end
 
     push!(required_columns, :BETA_std)
 
@@ -102,7 +132,7 @@ are excluded when processing annotation data for model training.
 """
 function get_non_annotation_columns()
 
-    non_annotation_columns = ["chrom", "start", "end", "SNP", "ref", "alt", "SNP","MAF", "N", "BETA", "SE", "PVALUE", "CHR", "BP", "variant_id", "Standard", "BETA_std", "mu", "alpha", "mu_spike", "ss_beta", "nn_sigma_beta", "nn_p_causal", "block", "block_residual_variance", "block_size"]
+    non_annotation_columns = ["chrom", "start", "end", "SNP", "ref", "alt", "SNP","MAF", "N", "N_case", "N_control", "BETA", "SE", "PVALUE", "CHR", "BP", "variant_id", "Standard", "BETA_std", "mu", "alpha", "mu_spike", "ss_beta", "nn_sigma_beta", "nn_p_causal", "block", "block_residual_variance", "block_size"]
 
     return non_annotation_columns
 end
@@ -135,28 +165,59 @@ function select_annotation_columns(df::DataFrame)
 end
 
 """
-    standardize_beta(BETA::Vector{Float64}, SE::Vector{Float64}, N::Vector{Int64}, MAF::Vector{Float64})
+    standardize_beta(BETA::Vector{Float64}, SE::Vector{Float64}, N::Vector{Int64}, MAF::Vector{Float64}; trait_type="quantitative", prevalence=0.5)
 
 Standardize beta coefficients from GWAS summary statistics.
 
 # Arguments
-- `BETA`: Vector of effect sizes (beta coefficients)
+- `BETA`: Vector of effect sizes (beta coefficients for quantitative, log-OR for case-control)
 - `SE`: Vector of standard errors for the beta coefficients
-- `N`: Vector of sample sizes
+- `N`: Vector of sample sizes (effective sample size for case-control)
 - `MAF`: Vector of minor allele frequencies
+- `trait_type::String="quantitative"`: Type of trait - "quantitative" or "case-control"
+- `prevalence::Float64=0.5`: Population prevalence for case-control traits
 
 # Returns
-- Vector of standardized beta coefficients
+- Vector of standardized beta coefficients (liability scale for case-control)
 
 # Details
-This function standardizes the beta coefficients by scaling them based on the 
-estimated trait variance (σ2y) and the sample sizes. This helps make the coefficients 
-comparable across different studies or variants with different minor allele frequencies.
+For quantitative traits: standardizes by scaling based on estimated trait variance (σ2y) 
+and sample sizes.
+
+For case-control traits: converts log-OR to liability scale effect sizes using the 
+liability threshold model (Lee et al. 2011, doi:10.1038/ng.933). The transformation 
+accounts for ascertainment bias in case-control sampling.
 """
-function standardize_beta(BETA::Vector{Float64}, SE::Vector{Float64}, N::Vector{Int64}, MAF::Vector{Float64})
-    σ2y = median(2 .* MAF .* (1 .- MAF) .* (N .* (SE .^ 2) .+ BETA .^ 2))
-    s = sqrt.((σ2y ./ (N .* SE .^ 2 .+ BETA .^ 2)))
-    return BETA .* s
+function standardize_beta(BETA::Vector{Float64}, SE::Vector{Float64}, N::Vector{Int64}, MAF::Vector{Float64}; trait_type="quantitative", prevalence=0.5)
+    if trait_type == "case-control"
+        # Convert log-OR to liability scale (Lee et al. 2011)
+        # Assuming case proportion = prevalence
+        K = prevalence  # Population prevalence
+        
+        # Threshold on standard normal distribution
+        # quantile of standard normal at K, then compute pdf at that point
+        T = quantile(Normal(0, 1), K)
+        z = pdf(Normal(0, 1), T)
+        
+        # Liability scale conversion factor
+        # For binary traits: β_liability = β_logOR * P(1-P) / z
+        # where P is the prevalence and z = φ(T) where T is threshold
+        conversion_factor = K * (1 - K) / z
+        
+        # Convert to liability scale
+        BETA_liability = BETA .* conversion_factor
+        
+        # Standardize on liability scale
+        σ2y_liability = median(2 .* MAF .* (1 .- MAF) .* (N .* (SE .* conversion_factor) .^ 2 .+ BETA_liability .^ 2))
+        s = sqrt.((σ2y_liability ./ (N .* (SE .* conversion_factor) .^ 2 .+ BETA_liability .^ 2)))
+        
+        return BETA_liability .* s
+    else
+        # Quantitative trait standardization (original implementation)
+        σ2y = median(2 .* MAF .* (1 .- MAF) .* (N .* (SE .^ 2) .+ BETA .^ 2))
+        s = sqrt.((σ2y ./ (N .* SE .^ 2 .+ BETA .^ 2)))
+        return BETA .* s
+    end
 end
 
 function get_all_annot_columns()

@@ -114,3 +114,27 @@ end
 function standardize(matrix)
     return (matrix .- mean(matrix, dims=1)) ./ std(matrix, dims=1)
 end
+
+"""
+    compute_effective_sample_size(N_case, N_control)
+
+Compute effective sample size for case-control studies.
+
+# Arguments
+- `N_case`: Number of cases (scalar or vector)
+- `N_control`: Number of controls (scalar or vector)
+
+# Returns
+- Effective sample size: 4 / (1/N_case + 1/N_control)
+
+# Details
+The effective sample size for case-control studies accounts for the imbalance
+between cases and controls. It is maximized when N_case = N_control and is
+approximately equal to the harmonic mean multiplied by 2.
+
+This formulation is commonly used in GWAS to adjust for the reduced statistical
+power in unbalanced case-control designs.
+"""
+function compute_effective_sample_size(N_case, N_control)
+    return 4 ./ (1 ./ N_case .+ 1 ./ N_control)
+end
