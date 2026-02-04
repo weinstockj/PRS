@@ -2,3 +2,8 @@
 *.so
 *.tsv
 *.bson
+*.bed
+*.bim
+*.fam
+*.parquet
+*.tsv
