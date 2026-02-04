@@ -1,6 +1,3 @@
-
-
-
 """
     log_prior(β, σ2_β, p_causal, σ2, spike_σ2, to)
 
@@ -17,13 +14,13 @@ Calculate the log density of β based on a spike and slab prior.
 # Returns
 - `Float64`: Log prior density.
 """
-function log_prior(β::Vector, σ2_β::Vector, p_causal::Vector, σ2::Real, spike_σ2::Real, to) #; spike_σ2 = 1e-8) 
+function log_prior(β::Vector, σ2_β::Vector, p_causal::Vector, σ2::Real, spike_σ2::Real, to) #; spike_σ2 = 1e-8)
 
     P = length(β)
     slab_dist = Normal.(0, sqrt(σ2) .* sqrt.(σ2_β .+ spike_σ2))
     spike_dist = Normal(0, sqrt(σ2) .* sqrt(spike_σ2))
     # gen = ([logpdf(slab_dist[i], β[i]) + log(p_causal[i]), logpdf(spike_dist, β[i]) + log(1.0 - p_causal[i])] for i in 1:P)
-    logprob = 0.0 
+    logprob = 0.0
     container = zeros(2)
     @timeit to "calculate logsumexp loop" @inbounds @fastmath for i in 1:P
         x = β[i]
@@ -31,8 +28,8 @@ function log_prior(β::Vector, σ2_β::Vector, p_causal::Vector, σ2::Real, spik
         container[1] = logpdf(slab_dist[i], x) + log(p)
         container[2] = logpdf(spike_dist, x) + log(1.0 - p)
         logprob += Flux.logsumexp(container)
-    end 
-    
+    end
+
     # return @fastmath sum(logsumexp.(gen))
     return sum(logprob)
 end
@@ -176,9 +173,9 @@ function elbo(z::Vector, q_μ::Vector, log_q_var::Vector, coef::Vector, SE::Vect
     q = @timeit to "q" MvNormal(q_μ, Diagonal(q_var))
     q_sd = @timeit to "q_sd" sqrt.(q_var)
     ϕ = @timeit to "ϕ" q_μ .+ q_sd .* z
-    # γ = compute_γ(q_μ, q_var)   
-    # jl =  joint_log_prob(γ .* ϕ, coef, SE, R) 
-    jl =  @timeit to "joint_log_prob" joint_log_prob(ϕ, coef, SE, R, σ2_β, p_causal, σ2, to) 
+    # γ = compute_γ(q_μ, q_var)
+    # jl =  joint_log_prob(γ .* ϕ, coef, SE, R)
+    jl = @timeit to "joint_log_prob" joint_log_prob(ϕ, coef, SE, R, σ2_β, p_causal, σ2, to)
     q = @timeit to "logpd" logpdf(q, ϕ)
     # jac = prod(z)
     return (jl - q)
@@ -189,11 +186,10 @@ function elbo(z::Vector, q_μ::Vector, log_q_var::Vector, coef::Vector, Σ::Abst
     q = @timeit to "q" MvNormal(q_μ, Diagonal(q_var))
     q_sd = @timeit to "q_sd" sqrt.(q_var)
     ϕ = @timeit to "ϕ" q_μ .+ q_sd .* z
-    # γ = compute_γ(q_μ, q_var)   
-    # jl =  joint_log_prob(γ .* ϕ, coef, SE, R) 
-    jl =  @timeit to "joint_log_prob" joint_log_prob(ϕ, coef, Σ, SRSinv, σ2_β, p_causal, σ2, spike_σ2, to) 
+    # γ = compute_γ(q_μ, q_var)
+    # jl =  joint_log_prob(γ .* ϕ, coef, SE, R)
+    jl = @timeit to "joint_log_prob" joint_log_prob(ϕ, coef, Σ, SRSinv, σ2_β, p_causal, σ2, spike_σ2, to)
     q = @timeit to "logpd" logpdf(q, ϕ)
     # jac = prod(z)
     return (jl - q)
 end
-

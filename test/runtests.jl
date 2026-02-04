@@ -12,49 +12,53 @@ include("test_inner_loop_cavi.jl")
 
 function test_rss_elbo()
 
-    β = [0.0011, .0052, 0.0013]
-    coef = [-0.019, 0.013, -.0199] 
-    SE = [.0098, .0098, .0102]
-    R = [1.0 .03 .017; .031 1.0 -0.03; .017 -0.02 1.0]
+    β = [0.0011, 0.0052, 0.0013]
+    coef = [-0.019, 0.013, -0.0199]
+    SE = [0.0098, 0.0098, 0.0102]
+    R = [1.0 0.03 0.017; 0.031 1.0 -0.03; 0.017 -0.02 1.0]
 
     Σ = PDMat(Hermitian(SE .* R .* SE'))
     SRSinv = SE .* R .* (1 ./ SE)
 
     σ2_β = [0.01, 0.01, 0.01]
-    p_causal = [0.10, 0.10, 0.10]
+    p_causal = [0.1, 0.1, 0.1]
     σ2 = 1.0
-    σ2_spike = 1e-8
+    σ2_spike = 1.0e-8
 
     @test abs(
-            rss(
-              β,
-              coef,
-              Σ,
-              SRSinv,
-              TimerOutput()
-            ) -6.55088350237490
-        ) < 1e-8
+        rss(
+            β,
+            coef,
+            Σ,
+            SRSinv,
+            TimerOutput()
+        ) - 6.5508835023749
+    ) < 1.0e-8
 
-    @test abs(joint_log_prob(
-        β,
-        coef,
-        Σ,
-        SRSinv,
-        σ2_β,
-        p_causal,
-        σ2,
-        σ2_spike,
-        TimerOutput()
-    ) - 3.792569404258637) < .0001
+    @test abs(
+        joint_log_prob(
+            β,
+            coef,
+            Σ,
+            SRSinv,
+            σ2_β,
+            p_causal,
+            σ2,
+            σ2_spike,
+            TimerOutput()
+        ) - 3.792569404258637
+    ) < 0.0001
 
-    @test abs(log_prior(
-                β,
-                σ2_β,
-                p_causal,
-                σ2,
-                σ2_spike,
-                TimerOutput()
-            ) - -2.758314098116269) < .0001
+    return @test abs(
+        log_prior(
+            β,
+            σ2_β,
+            p_causal,
+            σ2,
+            σ2_spike,
+            TimerOutput()
+        ) - -2.758314098116269
+    ) < 0.0001
 end
 
 
@@ -67,11 +71,11 @@ function test_complete_run()
     model = Chain(layer_1, layer_output)
     optim_type = AdamW(0.02)
     opt = Flux.setup(optim_type, model)
-    raw = simulate_raw(;N = 20_000, P = 1000, K = 100, h2 = 0.25)
+    raw = simulate_raw(; N = 20_000, P = 1000, K = 100, h2 = 0.25)
     ss = estimate_sufficient_statistics(raw[1], raw[3])
 
     # number of SNPs
-    M = length(ss[1]) 
+    M = length(ss[1])
     N_vec = fill(10_000, M)
 
     XtX = construct_XtX(ss.R, ones(M), mean(N_vec))
@@ -79,35 +83,35 @@ function test_complete_run()
     Xty = construct_Xty(ss.coef, D)
 
     σ2, R2, yty = infer_σ2(
-        ss.coef, 
-        ss.SE, 
-        XtX, 
-        Xty, 
-        mean(N_vec), 
-        M; 
-        estimate = true, 
-        λ = 0.50 * mean(N_vec)
+        ss.coef,
+        ss.SE,
+        XtX,
+        Xty,
+        mean(N_vec),
+        M;
+        estimate = true,
+        λ = 0.5 * mean(N_vec)
     )
 
     out = train_until_convergence(
-               ss.coef, 
-               ss.SE, 
-               ss.R, 
-               XtX, 
-               Xty,
-               raw.G, # annotations
-               model = model,
-               opt = opt,
-               σ2 = σ2,
-               R2 = R2,
-               yty = yty,
-               N = N_vec,
-               train_nn = true,
-               max_iter = 5
-            )
+        ss.coef,
+        ss.SE,
+        ss.R,
+        XtX,
+        Xty,
+        raw.G, # annotations
+        model = model,
+        opt = opt,
+        σ2 = σ2,
+        R2 = R2,
+        yty = yty,
+        N = N_vec,
+        train_nn = true,
+        max_iter = 5
+    )
     estimate = out.q_μ .* out.q_α .+ out.q_spike_μ .* (1 .- out.q_α)
 
-    @test cor(estimate, raw[2]) >= 0.6
+    return @test cor(estimate, raw[2]) >= 0.6
 end
 
 function test_nn()
@@ -125,41 +129,41 @@ function test_nn()
 
     G = rand(Normal(0, 1), P, K)
 
-    q_var = 0.1 .* exp.((G * rand(Normal(0, 0.3), K))) 
+    q_var = 0.1 .* exp.((G * rand(Normal(0, 0.3), K)))
     q_α = Flux.σ(-2.0 .+ q_var)
 
     trained_model = fit_heritability_nn(
-            model, 
-            opt,
-            Float32.(q_var), 
-            Float32.(q_α), 
-            Float32.(G);
-            patience = 150
+        model,
+        opt,
+        Float32.(q_var),
+        Float32.(q_α),
+        Float32.(G);
+        patience = 150
     )
 
     yhat = transpose(trained_model(Float32.(transpose(G))))
     yhat[:, 1] .= exp.(yhat[:, 1])
     yhat[:, 2] .= Flux.σ(yhat[:, 2])
 
-    @test cor(yhat[:, 1], q_var) >= .70
-    @test cor(yhat[:, 2], q_α) >= .70
+    @test cor(yhat[:, 1], q_var) >= 0.7
+    return @test cor(yhat[:, 2], q_α) >= 0.7
 end
 
 function test_infer_σ2()
 
-        N = 10_000 
-        P = 200
-        K = 100
-        h2 = 0.30
-        raw = simulate_raw(;N = N, P = P, K = K, h2 = h2)
-        ss = estimate_sufficient_statistics(raw[1], raw[3])
-        X_sd = sqrt.(ss[5] ./ N)
-        R = ss[4]
-        XtX = construct_XtX(R, X_sd, N)
-        D = construct_D(XtX)
-        Xty = construct_Xty(ss[1], D)
-        σ2, R2, yty = infer_σ2(ss[1], ss[2], XtX, Xty, N, P; estimate = true)
-        @test abs(R2 - h2) < 0.05
+    N = 10_000
+    P = 200
+    K = 100
+    h2 = 0.3
+    raw = simulate_raw(; N = N, P = P, K = K, h2 = h2)
+    ss = estimate_sufficient_statistics(raw[1], raw[3])
+    X_sd = sqrt.(ss[5] ./ N)
+    R = ss[4]
+    XtX = construct_XtX(R, X_sd, N)
+    D = construct_D(XtX)
+    Xty = construct_Xty(ss[1], D)
+    σ2, R2, yty = infer_σ2(ss[1], ss[2], XtX, Xty, N, P; estimate = true)
+    return @test abs(R2 - h2) < 0.05
 end
 
 @testset "tests" begin

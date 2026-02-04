@@ -33,7 +33,7 @@ function main(
         model_file::String = "",
         betas_output_file::String = "PRSFNN_out_cavi.tsv",
         interpretation_output_file::String = "nn_interpretation.tsv",
-        first_stage_rv_file::String = "PRSFNN_out_initial.tsv"; 
+        first_stage_rv_file::String = "PRSFNN_out_initial.tsv";
         min_MAF = 0.01, train_nn = false, H = 5, max_iter = 5, use_ld_cache = true, force_recompute_ld = false, trait_type::String = "quantitative", prevalence::Float64 = 0.5
     )
 

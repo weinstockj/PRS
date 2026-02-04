@@ -24,15 +24,15 @@ function test_long_nn()
     PRSFNN.describe_vector(q_α)
 
     trained_model = PRSFNN.fit_heritability_nn(
-            model, 
-            opt,
-            q_var, 
-            q_α, 
-            G;
-            max_epochs = 4000,
-            patience = 400,
-            mse_improvement_threshold = 0.001,
-            learning_rate_decay = 0.95
+        model,
+        opt,
+        q_var,
+        q_α,
+        G;
+        max_epochs = 4000,
+        patience = 400,
+        mse_improvement_threshold = 0.001,
+        learning_rate_decay = 0.95
     )
 
     # decay of 0.90 has minimum cor of 0.58
@@ -47,9 +47,9 @@ function test_long_nn()
     PRSFNN.describe_vector(yhat[:, 2])
 
     var_cor = cor(yhat[:, 1], q_var)
-    α_cor  = cor(yhat[:, 2], q_α)
+    α_cor = cor(yhat[:, 2], q_α)
     @test var_cor > 0.75
-    @test α_cor > 0.75
+    return @test α_cor > 0.75
 
     # return α_cor, var_cor
 end

@@ -27,10 +27,10 @@ This function:
 For quantitative traits, expects: SNP, MAF, N, BETA, SE, PVALUE
 For case-control traits, expects: SNP, MAF, N (or N_case and N_control), BETA (log-OR), SE, PVALUE
 """
-function load_annot_and_summary_stats(annotation_path::String, summary_statistics_path::String; min_MAF=0.01, trait_type="quantitative", prevalence=0.5)
-    
-    annot = DataFrame(Parquet2.Dataset(annotation_path); copycols=false)
-    rename!(annot,:variant_id => :SNP)
+function load_annot_and_summary_stats(annotation_path::String, summary_statistics_path::String; min_MAF = 0.01, trait_type = "quantitative", prevalence = 0.5)
+
+    annot = DataFrame(Parquet2.Dataset(annotation_path); copycols = false)
+    rename!(annot, :variant_id => :SNP)
 
     summary_statistics = CSV.read(summary_statistics_path, DataFrame)
 
@@ -59,19 +59,19 @@ function load_annot_and_summary_stats(annotation_path::String, summary_statistic
     @info "$(ltime()) Now standardizing beta for trait_type=$trait_type"
     if trait_type == "case-control"
         summary_statistics.BETA_std = standardize_beta(
-                    summary_statistics.BETA, 
-                    summary_statistics.SE, 
-                    summary_statistics.N,
-                    summary_statistics.MAF;
-                    trait_type=trait_type,
-                    prevalence=prevalence
+            summary_statistics.BETA,
+            summary_statistics.SE,
+            summary_statistics.N,
+            summary_statistics.MAF;
+            trait_type = trait_type,
+            prevalence = prevalence
         )
     else
         summary_statistics.BETA_std = standardize_beta(
-                    summary_statistics.BETA, 
-                    summary_statistics.SE, 
-                    summary_statistics.N,
-                    summary_statistics.MAF
+            summary_statistics.BETA,
+            summary_statistics.SE,
+            summary_statistics.N,
+            summary_statistics.MAF
         )
     end
 
@@ -82,14 +82,14 @@ function load_annot_and_summary_stats(annotation_path::String, summary_statistic
     # TODO: we should let the user decide on the min MAF
     summary_statistics = subset(summary_statistics, :MAF => ByRow(>=(min_MAF)))
 
-    subset_annot_summary_statistics = innerjoin(annot, summary_statistics; on = [:SNP], makeunique=true)
+    subset_annot_summary_statistics = innerjoin(annot, summary_statistics; on = [:SNP], makeunique = true)
 
     subset_annot_summary_statistics = unique(subset_annot_summary_statistics, :SNP) # takes first occurrence if multiple rows present for each SNP
 
     annot = select_annotation_columns(subset_annot_summary_statistics)
 
     summary_statistics = select(subset_annot_summary_statistics, required_columns)
-    current_LD_block_positions = subset_annot_summary_statistics[:,:BP]
+    current_LD_block_positions = subset_annot_summary_statistics[:, :BP]
 
     return annot, summary_statistics, current_LD_block_positions
 end
@@ -115,7 +115,7 @@ function extract_chr_pos(variant_str)
     return split_parts[1], parse(Int, split_parts[2])
 end
 
-unzip(a) = map(x->getfield.(a, x), fieldnames(eltype(a)))
+unzip(a) = map(x -> getfield.(a, x), fieldnames(eltype(a)))
 
 """
     get_non_annotation_columns()
@@ -132,7 +132,7 @@ are excluded when processing annotation data for model training.
 """
 function get_non_annotation_columns()
 
-    non_annotation_columns = ["chrom", "start", "end", "SNP", "ref", "alt", "SNP","MAF", "N", "N_case", "N_control", "BETA", "SE", "PVALUE", "CHR", "BP", "variant_id", "Standard", "BETA_std", "mu", "alpha", "mu_spike", "ss_beta", "nn_sigma_beta", "nn_p_causal", "block", "block_residual_variance", "block_size"]
+    non_annotation_columns = ["chrom", "start", "end", "SNP", "ref", "alt", "SNP", "MAF", "N", "N_case", "N_control", "BETA", "SE", "PVALUE", "CHR", "BP", "variant_id", "Standard", "BETA_std", "mu", "alpha", "mu_spike", "ss_beta", "nn_sigma_beta", "nn_p_causal", "block", "block_residual_variance", "block_size"]
 
     return non_annotation_columns
 end
@@ -188,29 +188,29 @@ For case-control traits: converts log-OR to liability scale effect sizes using t
 liability threshold model (Lee et al. 2011, doi:10.1038/ng.933). The transformation 
 accounts for ascertainment bias in case-control sampling.
 """
-function standardize_beta(BETA::Vector{Float64}, SE::Vector{Float64}, N::Vector{Int64}, MAF::Vector{Float64}; trait_type="quantitative", prevalence=0.5)
+function standardize_beta(BETA::Vector{Float64}, SE::Vector{Float64}, N::Vector{Int64}, MAF::Vector{Float64}; trait_type = "quantitative", prevalence = 0.5)
     if trait_type == "case-control"
         # Convert log-OR to liability scale (Lee et al. 2011)
         # Assuming case proportion = prevalence
         K = prevalence  # Population prevalence
-        
+
         # Threshold on standard normal distribution
         # quantile of standard normal at K, then compute pdf at that point
         T = quantile(Normal(0, 1), K)
         z = pdf(Normal(0, 1), T)
-        
+
         # Liability scale conversion factor
         # For binary traits: β_liability = β_logOR * P(1-P) / z
         # where P is the prevalence and z = φ(T) where T is threshold
         conversion_factor = K * (1 - K) / z
-        
+
         # Convert to liability scale
         BETA_liability = BETA .* conversion_factor
-        
+
         # Standardize on liability scale
         σ2y_liability = median(2 .* MAF .* (1 .- MAF) .* (N .* (SE .* conversion_factor) .^ 2 .+ BETA_liability .^ 2))
         s = sqrt.((σ2y_liability ./ (N .* (SE .* conversion_factor) .^ 2 .+ BETA_liability .^ 2)))
-        
+
         return BETA_liability .* s
     else
         # Quantitative trait standardization (original implementation)
@@ -232,8 +232,8 @@ function fill_in_missing_annot_cols(df)
     df = sort(df, :start)
     missing_cols = setdiff(new_annotation_columns, names(df))
     for col in missing_cols
-       df[!,col] .= 0.0
-#       df[!,col] .= missing
+        df[!, col] .= 0.0
+        #       df[!,col] .= missing
     end
     select!(df, :chrom, :start, :end, :variant_id, :ref, :alt, new_annotation_columns)
     return df

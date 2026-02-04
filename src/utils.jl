@@ -18,12 +18,12 @@ function check_no_nan(data)
     if sum(isnan.(data[1])) > 0
         error("NaN detected.")
     end
-    
+
     if sum(isnan.(data[2])) > 0
         error("NaN detected.")
     end
 
-    if sum(isnan.(data[3])) > 0
+    return if sum(isnan.(data[3])) > 0
         error("NaN detected.")
     end
 end
@@ -64,7 +64,7 @@ Clamp values to the range [ϵ, 1-ϵ] to avoid numerical issues with logit transf
 This function ensures that probability values are strictly between 0 and 1,
 preventing Inf/-Inf results when applying logit transformations.
 """
-function clamp(x, ϵ::Float64 = 1e-4)
+function clamp(x, ϵ::Float64 = 1.0e-4)
     x = max.(min.(x, 1.0 - ϵ), ϵ) # to avoid Inf with logit transformation later
     return x
 end
@@ -86,7 +86,7 @@ from [0,1] to [-∞,∞]. This implementation first clamps the input values to a
 numerical issues and then applies the LogExpFunctions.logit function.
 """
 function logit(x)
-    x = clamp(x)   
+    x = clamp(x)
     # return log.(x ./ (1 .- x))
     return LogExpFunctions.logit.(x)
 end
@@ -107,12 +107,12 @@ Clamp squared mean values to a minimum threshold to ensure numerical stability i
 This function ensures that squared mean values used in neural network fitting
 don't become too small, which could cause numerical instability.
 """
-function clamp_nn_fit_h_nn(q_μ_squared, max_value = 1e-5) # slightly below the threshold
+function clamp_nn_fit_h_nn(q_μ_squared, max_value = 1.0e-5) # slightly below the threshold
     return max.(q_μ_squared, max_value)
 end
 
 function standardize(matrix)
-    return (matrix .- mean(matrix, dims=1)) ./ std(matrix, dims=1)
+    return (matrix .- mean(matrix, dims = 1)) ./ std(matrix, dims = 1)
 end
 
 """

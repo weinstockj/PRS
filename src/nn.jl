@@ -20,7 +20,7 @@ Train a neural network model to predict variant effects using genome-wide annota
 """
 function fit_genome_wide_nn(
         betas = "/data/abattle4/april/hi_julia/prs_benchmark/prsfnn/jun22_adaptive_learning_rate/output/PRSFNN_out_final.tsv",
-        annotation_files_dir = "/data/abattle4/jweins17/annotations/output/", 
+        annotation_files_dir = "/data/abattle4/jweins17/annotations/output/",
         model_file = "trained_model.bson";
         n_epochs = 1306, H = 3, n_test = 30, learning_rate_decay = 0.98, patience = 30
     )
@@ -37,7 +37,7 @@ function fit_genome_wide_nn(
 
     # just to get K
     first_parquet = first(parquets)
-    first_annot = select_annotation_columns(DataFrame(Parquet2.Dataset(first_parquet); copycols=false))
+    first_annot = select_annotation_columns(DataFrame(Parquet2.Dataset(first_parquet); copycols = false))
     K = size(first_annot, 2)
 
     layer_1 = Dense(K => H, Flux.softplus; init = Flux.glorot_normal(gain = 0.005))
@@ -45,22 +45,22 @@ function fit_genome_wide_nn(
     layer_output.bias .= [StatsFuns.log(0.01), StatsFuns.logit(0.1)]
     model = Chain(layer_1, layer_output)
     initial_lr = 0.00005
-#    initial_lr = 0.0001
+    #    initial_lr = 0.0001
     optim_type = AdamW(initial_lr)
     opt = Flux.setup(optim_type, model)
     @info "$(ltime()) Training model with $K annotations"
 
     training_parquets = parquets[sample(1:length(parquets), n_epochs, replace = false)]
     n_epochs = length(training_parquets)
-    test_parquets     = setdiff(parquets, training_parquets)[rand(1:(length(parquets) - n_epochs), n_test)]
+    test_parquets = setdiff(parquets, training_parquets)[rand(1:(length(parquets) - n_epochs), n_test)]
 
-    test_annotations = vcat([DataFrame(Parquet2.Dataset(x); copycols=false) for x in test_parquets]...)
-    test_df        = innerjoin(test_annotations, summary_statistics, on = [:variant_id], makeunique=true)
-    test_SNPs      = test_df.variant_id
-    
+    test_annotations = vcat([DataFrame(Parquet2.Dataset(x); copycols = false) for x in test_parquets]...)
+    test_df = innerjoin(test_annotations, summary_statistics, on = [:variant_id], makeunique = true)
+    test_SNPs = test_df.variant_id
+
     test_X = Float32.(transpose(select_annotation_columns(test_df[:, names(test_annotations)])))
     test_Y = Float32.(transpose(hcat(log.((test_df.mu .^ 2) ./ RSE), logit.(test_df.alpha))))
-#    test_Y = Float32.(transpose(hcat(log.((test_df.mu .^ 2) ./ global_σ2), logit.(test_df.alpha))))
+    #    test_Y = Float32.(transpose(hcat(log.((test_df.mu .^ 2) ./ global_σ2), logit.(test_df.alpha))))
 
     @info "$(ltime()) Test set is comprised of $(length(test_parquets)) LD blocks and $(length(test_SNPs)) SNPs"
 
@@ -73,13 +73,13 @@ function fit_genome_wide_nn(
     best_model = deepcopy(model)
     best_opt = deepcopy(opt)
 
-    bottom_σ2β = 1e-7 # used in clamping to avoid numerical issues later on
+    bottom_σ2β = 1.0e-7 # used in clamping to avoid numerical issues later on
 
     @inbounds for i in 1:n_epochs
         annot_file = training_parquets[i]
-        
+
         @info "$(ltime()) Epoch $i now reading $annot_file"
-        annotations = DataFrame(Parquet2.Dataset(annot_file); copycols=false)
+        annotations = DataFrame(Parquet2.Dataset(annot_file); copycols = false)
         # annotations = Parquet2.Dataset(annot_file)
         epoch_df = innerjoin(annotations, summary_statistics, on = [:variant_id])
         epoch_annot = select_annotation_columns(epoch_df[:, names(annotations)])
@@ -88,7 +88,7 @@ function fit_genome_wide_nn(
         Y = Float32.(
             transpose(
                 hcat(
-                    log.(max.(epoch_df.mu .^ 2 ./ RSE, bottom_σ2β)), # clamp to avoid numerical issues 
+                    log.(max.(epoch_df.mu .^ 2 ./ RSE, bottom_σ2β)), # clamp to avoid numerical issues
                     logit.(epoch_df.alpha)
                 )
             )
@@ -96,23 +96,23 @@ function fit_genome_wide_nn(
 
         data = (X, Y)
 
-        DL = Flux.DataLoader(data, batchsize=80, shuffle=true)
+        DL = Flux.DataLoader(data, batchsize = 80, shuffle = true)
 
         train!(nn_loss, model, DL, opt)
 
         train_loss = nn_loss(
-                model, 
-                Float32.(X), 
-                Float32.(Y)
-            )
+            model,
+            Float32.(X),
+            Float32.(Y)
+        )
 
         push!(train_losses, train_loss)
 
         test_loss = nn_loss(
-                model,
-                test_X,
-                test_Y
-            )
+            model,
+            test_X,
+            test_Y
+        )
 
         push!(test_losses, test_loss)
 
@@ -121,10 +121,10 @@ function fit_genome_wide_nn(
         end
 
         if test_loss < best_loss
-#	if (best_loss - test_loss) / best_loss > 0.002
+            #	if (best_loss - test_loss) / best_loss > 0.002
             best_loss = test_loss
             best_model = deepcopy(model)
-	    best_opt = deepcopy(opt)
+            best_opt = deepcopy(opt)
             best_model_epoch = i
             count_since_best = 0
         else
@@ -165,9 +165,9 @@ function fit_genome_wide_nn(
     end
 
     @save model_file model opt
-    
+
     write_global_residual_variance(betas, global_σ2)
-    
+
     @info "$(ltime()) Best model and opt state taken from Epoch $best_model_epoch."
 
     return model, opt, train_losses, test_losses, setdiff(names(test_annotations), get_non_annotation_columns())
@@ -204,7 +204,7 @@ end
     yhat[:, 2] .= 1.0 ./ (1.0 .+ exp.(-yhat[:, 2]))
 ```
 """
-function fit_heritability_nn(model, opt, q_μ_sq, q_α, G, i=1; max_epochs=3000, patience=100, mse_improvement_threshold=0.01, test_ratio=0.2, num_splits=10, learning_rate_decay = 0.95)
+function fit_heritability_nn(model, opt, q_μ_sq, q_α, G, i = 1; max_epochs = 3000, patience = 100, mse_improvement_threshold = 0.01, test_ratio = 0.2, num_splits = 10, learning_rate_decay = 0.95)
 
 
     # G_standardized = standardize(G)
@@ -224,17 +224,17 @@ function fit_heritability_nn(model, opt, q_μ_sq, q_α, G, i=1; max_epochs=3000,
 
     for _ in 1:num_splits
         # ak: shuffle indices
-        permuted_indices = randperm(P)  
+        permuted_indices = randperm(P)
         # ak: get number of validation samples
         num_test = floor(Int, test_ratio * P)
         # ak: split into train and test based on above indices
-        train_indices = permuted_indices[1:end-num_test]
-        test_indices = permuted_indices[end-num_test+1:end]
+        train_indices = permuted_indices[1:(end - num_test)]
+        test_indices = permuted_indices[(end - num_test + 1):end]
 
         # ak: compute the KS statistic and pick the split with smallest KS stats
         ks_test = ApproximateTwoSampleKSTest(q_α[train_indices], q_α[test_indices])
-        ks_n = ks_test.n_x*ks_test.n_y/(ks_test.n_x+ks_test.n_y)
-        ks_statistic = (sqrt(ks_n)*ks_test.δ)
+        ks_n = ks_test.n_x * ks_test.n_y / (ks_test.n_x + ks_test.n_y)
+        ks_statistic = (sqrt(ks_n) * ks_test.δ)
 
         if ks_statistic < best_ks_statistic
             best_ks_statistic = ks_statistic
@@ -253,8 +253,8 @@ function fit_heritability_nn(model, opt, q_μ_sq, q_α, G, i=1; max_epochs=3000,
 
     # Main.@infiltrate
     # DL = Flux.DataLoader(data, batchsize=10, shuffle=true, rng = Random.seed!(1))
-    DL = Flux.DataLoader(data, batchsize=10, shuffle=true)
-    
+    DL = Flux.DataLoader(data, batchsize = 10, shuffle = true)
+
     best_loss = Inf
     best_model = deepcopy(model)
     best_opt = deepcopy(opt)
@@ -266,24 +266,24 @@ function fit_heritability_nn(model, opt, q_μ_sq, q_α, G, i=1; max_epochs=3000,
     @inbounds for epoch in 1:max_epochs
         train!(nn_loss, model, DL, opt)
         train_loss = nn_loss(
-                model, 
-                Float32.(transpose(best_train_data[1])), 
-                Float32.(transpose(hcat(log.(best_train_data[2]), logit.(best_train_data[3]))))
-            )
+            model,
+            Float32.(transpose(best_train_data[1])),
+            Float32.(transpose(hcat(log.(best_train_data[2]), logit.(best_train_data[3]))))
+        )
         push!(train_losses, train_loss)
 
         # ak: validation loss
         test_loss = nn_loss(
-                model,
-                Float32.(transpose(best_test_data[1])),
-                Float32.(transpose(hcat(log.(best_test_data[2]), logit.(best_test_data[3]))))
-            )
+            model,
+            Float32.(transpose(best_test_data[1])),
+            Float32.(transpose(hcat(log.(best_test_data[2]), logit.(best_test_data[3]))))
+        )
         push!(test_losses, test_loss)
 
         mse_improvement = (test_loss - best_loss) / test_loss
 
         if epoch % 50 == 0
-            @info "$(ltime()) Epoch: $epoch, Train loss: $(round(train_loss, digits=3)), Test loss: $(round(test_loss, digits=3)), Relative change (ideally negative): $(round(mse_improvement; digits = 3))"
+            @info "$(ltime()) Epoch: $epoch, Train loss: $(round(train_loss, digits = 3)), Test loss: $(round(test_loss, digits = 3)), Relative change (ideally negative): $(round(mse_improvement; digits = 3))"
         end
 
         # if improvement from prev iteration is greater than threshold
@@ -328,7 +328,7 @@ function write_global_residual_variance(output_file, global_sigma2)
     df = DataFrame(
         global_sigma2 = global_sigma2
     )
-    CSV.write(output_file, df; delim = "\t")
+    return CSV.write(output_file, df; delim = "\t")
 end
 
 function find_max_activation(layer, K)
@@ -347,21 +347,21 @@ end
 function predict_with_nn(model, G)
     outputs = model(transpose(G))
     nn_σ2_β = exp.(outputs[1, :])
-    nn_p_causal = Flux.σ.(outputs[2, :]) 
+    nn_p_causal = Flux.σ.(outputs[2, :])
     return nn_σ2_β, nn_p_causal
 end
 
 # RMSE
-function nn_loss(model, G, y; w_σ2β = 1.0, w_p_causal = 1.0) ## ak: need two losses for slab variance and percent causal 
+function nn_loss(model, G, y; w_σ2β = 1.0, w_p_causal = 1.0) ## ak: need two losses for slab variance and percent causal
 
     yhat = model(G)
     σ2β_mse = @views Flux.mse(yhat[1, :], y[1, :])
 
 
-    loss_σ2β = σ2β_mse 
+    loss_σ2β = σ2β_mse
     p_causal_mse = @views Flux.mse(yhat[2, :], y[2, :])
 
-    loss_p_causal = p_causal_mse 
+    loss_p_causal = p_causal_mse
 
     return w_σ2β * loss_σ2β + w_p_causal * loss_p_causal ## ak: losses summed to form the total loss for training
 end
@@ -421,4 +421,3 @@ beta_logpdf(x; α = 1.0, β = 9.0) = xlogy(α - 1, x) + xlog1py(β - 1, -x) - Sp
 
 #    return df
 #end
-

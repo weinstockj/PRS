@@ -1,28 +1,28 @@
 # P is number of SNPs, K is number of annotations
-# output is normalized variance per SNP e.g., s * h2 / P where h2 / P 
+# output is normalized variance per SNP e.g., s * h2 / P where h2 / P
 # is the average SNP and s is a small adjustment
 function draw_slab_s_given_annotations(P; K = 100)
-   
+
     K_half = K ÷ 2
-   
+
     # G = rand(Normal(0, 1.0), P, K) # matrix of annotations - could be made more realistic?
     G_cont = rand(Normal(0, 1.0), P, K_half)  # half continuous annotations (normally distributed)
     G_binom = rand(Binomial(1, 0.5), P, K_half)  # half binomial annotations
     G::Matrix{Float64} = hcat(G_cont, G_binom)  # combine annotations
     # G[:,zero_col] .= 0
-   
+
     # three possibly ways in which the annotations informs per SNP h2
     functions = (
-        x -> 0.10 .* x, # linear
+        x -> 0.1 .* x, # linear
         x -> 0.02 .* x .^ 2, # quadratic,
         x -> x .* 0, # the annotation does nothing!
     )
 
-    choose_f = Categorical([.3, .05, .65])
+    choose_f = Categorical([0.3, 0.05, 0.65])
     # pick 1 of the 3 functions
     choices = [rand(choose_f) for i in 1:K]
     ϕ::Vector{Function} = [functions[choices[i]] for i in 1:K] # randomly pick a linear or quadratic transformation
-    
+
     σ2 = zeros(P) # P = 1000, K = 100
     @inbounds for i in 1:P
         # define variance of SNPs as sum of all of the ϕ(G)
@@ -77,7 +77,7 @@ This function simulates genotype and phenotype data with a realistic genetic arc
 The simulation includes both continuous and binary annotations, with varying relationships
 to effect size variance (linear, quadratic, or null effects).
 """
-function simulate_raw(;N = 10_000, P = 1_000, K = 100, h2 = 0.10)
+function simulate_raw(; N = 10_000, P = 1_000, K = 100, h2 = 0.1)
 
     Random.seed!(0)
 
@@ -89,7 +89,7 @@ function simulate_raw(;N = 10_000, P = 1_000, K = 100, h2 = 0.10)
     Σ = U * D * U'
     Σ = 0.5 * (Σ + Σ')
     X = transpose(rand(MvNormal(zeros(P), Σ), N))
-    p_causal = 0.10
+    p_causal = 0.1
     L = p_causal * P # 100
     γ = rand(Bernoulli(p_causal), P)
 
@@ -99,7 +99,7 @@ function simulate_raw(;N = 10_000, P = 1_000, K = 100, h2 = 0.10)
     s, G, function_choices, phi, sigma_squared = draw_slab_s_given_annotations(P; K = K)
 
     spike = rand(Normal(0, 0.001), P)
-    slab  = rand(Normal(0,  sqrt(h2 / L)), P)
+    slab = rand(Normal(0, sqrt(h2 / L)), P)
     β = γ .* slab + (1 .- γ) .* spike
     # β[γ] .= β[γ] .* sqrt.(s)
     β .= β .* sqrt.(s) ## ak: s is normalized variance per SNP for ALL SNPs, not just causal #*#
